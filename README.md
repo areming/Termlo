@@ -2,11 +2,11 @@
 
 [中文](#中文) · [English](#english)
 
-![Termlo](assets/termlo.png)
+<img src="assets/termlo.png" alt="Termlo logo" width="96" height="96">
 
 ## 中文
 
-**Termlo，让服务器管理更省心。** 它保留 SSH 多标签终端与独立 SFTP，让智能体在你选定的主机上检查环境、讨论方案、执行命令并核对结果。桌面端由 **Electron、JavaScript、xterm.js 和 ssh2** 构成；先前用于分析的 REA 是 Rust 项目，但不是 Termlo 的运行框架。
+**Termlo，让服务器管理更省心。** 它保留 SSH 多标签终端与独立 SFTP，让智能体在你选定的主机上检查环境、讨论方案、执行命令并核对结果。桌面端由 **Electron、JavaScript、xterm.js 和 ssh2** 构成。
 
 ### 一眼了解
 
@@ -24,7 +24,7 @@
 
 ### 下载与使用
 
-从 [Releases](https://github.com/areming/Termlo/releases) 下载 **1.1.0**：Windows x64、macOS Intel 或 Apple Silicon。安装包暂未签名，macOS 首次打开可能需要在系统设置中允许。详见[发布与兼容说明](RELEASING.md)。
+从 [Releases](https://github.com/areming/Termlo/releases) 下载 **1.1.1**：Windows x64、macOS Intel 或 Apple Silicon。安装包暂未签名，macOS 首次打开可能需要在系统设置中允许。详见[发布与兼容说明](RELEASING.md)。
 
 1. 添加主机，首次连接核对 SSH 指纹。需要跳板机时，在主机编辑页选择已保存的跳板主机。
 2. 使用终端或单独连接 SFTP；终端提供命令高亮，也能切回原始配色。
@@ -49,7 +49,7 @@ npm run start
 
 ## English
 
-**Termlo makes server management easier.** It combines multi-tab SSH and independent SFTP with an agent that can inspect selected hosts, discuss a plan, run commands, and verify results. The desktop app is built with **Electron, JavaScript, xterm.js, and ssh2**. REA, used in earlier analysis, is a Rust project but is not Termlo's runtime.
+**Termlo makes server management easier.** It combines multi-tab SSH and independent SFTP with an agent that can inspect selected hosts, discuss a plan, run commands, and verify results. The desktop app is built with **Electron, JavaScript, xterm.js, and ssh2**.
 
 ### See it at a glance
 
@@ -60,7 +60,7 @@ All four illustrations use **fictional demo data**. They contain no real account
 
 ### Download and start
 
-Download **1.1.0** for Windows x64, macOS Intel, or Apple Silicon from [Releases](https://github.com/areming/Termlo/releases). The installers are unsigned; see the [release notes](RELEASING.md) for compatibility and installation limits.
+Download **1.1.1** for Windows x64, macOS Intel, or Apple Silicon from [Releases](https://github.com/areming/Termlo/releases). The installers are unsigned; see the [release notes](RELEASING.md) for compatibility and installation limits.
 
 Add a host and verify its SSH fingerprint. Use a terminal or connect SFTP independently. To use the agent, configure an OpenAI-compatible endpoint and model, then choose hosts and start a Plan or autonomous task. Commands and checks appear in the execution console.
 
