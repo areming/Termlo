@@ -1,23 +1,13 @@
-# Termlo 1.0.0
+# Termlo 1.1.0
 
-Termlo is a local-first SSH/SFTP client with an agent for planning, operating, and checking work across servers.
+Termlo is an Electron/JavaScript desktop client for SSH, independent SFTP, and agent-assisted server work. Version 1.1.0 adds an **Account service** entry in Assistant: select one saved host, attach the bundled User API package automatically, and start an autonomous deployment task with visible checks and command output. The optional service provides email/password identity and Swagger documentation; local SSH does not require it.
 
-- Multi-tab SSH terminals, jump hosts, host-key checks, and an independent SFTP view.
-- Configurable OpenAI-compatible model endpoint; Plan and autonomous execution modes.
-- File and project attachments, live command consoles, host status, and compact task results.
-- Host-level change tracking, task ledger, controlled file recovery, and optional Alibaba Cloud ECS snapshot integration.
-- Project spaces and an optional standalone account API.
+The repository home is now bilingual, with four illustrated guides for hosts, terminals, the agent, and account service deployment. All illustrations contain fictional demo data, not screenshots of user servers or accounts.
 
-Download the installer matching your operating system and processor. Windows and macOS installers are currently unsigned; macOS builds require real-device validation. See the [English guide](README.md) or [中文说明](README.zh-CN.md).
+Windows and macOS installers remain unsigned. Deployment success depends on the target host, available permissions, and network setup; public HTTPS and rollback are never assumed without verification. See the [guide](README.md) and [account API details](services/user-api/README.md).
 
 ## 中文
 
-Termlo 是本地优先的 SSH/SFTP 客户端，内置可规划、执行并核对多台服务器任务的智能体。
+1.1.0 在助手中新增**账户服务**入口：选一台已保存的服务器，自动附上用户 API 包并发起自主部署任务。检查、执行与验收仍由智能体根据现场完成，命令可在执行台查看。普通 SSH 无需使用账户服务。
 
-- SSH 多标签终端、跳板机、指纹核对和独立 SFTP。
-- 自定义兼容 OpenAI 的模型接口；支持 Plan 讨论与自主执行。
-- 文件和项目附件、实时命令执行台、主机状态与精简结果。
-- 主机跟踪、任务变更账本、受控文件恢复，以及可选的阿里云 ECS 快照接入。
-- 项目空间和可选的独立账户 API。
-
-请选择与系统和处理器匹配的安装包。当前 Windows/macOS 安装包尚未签名；macOS 仍需实机验收。详见[中文说明](README.zh-CN.md)。
+仓库首页改为页内中英双语，并加入四个功能介绍页。所有配图均由虚构示例制作，不包含真实主机、账户或任务截图。安装包尚未签名；目标主机的权限、依赖与网络条件会影响部署结果。

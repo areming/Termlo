@@ -1,5 +1,7 @@
 # Termlo 构建与发布
 
+1.1.0 起，桌面安装器内含可选账户服务部署包。安装桌面端本身不会启动服务器；需在助手中选定主机，发起智能体部署任务并核对结果。
+
 ## 项目文件
 
 仓库根目录包含桌面源码 `src/`、图标 `assets/`、构建脚本 `scripts/`、测试 `test/`、独立的 `services/user-api/`、中英文 README 和 GitHub Actions 工作流。运行 `npm ci` 后即可在 Node.js 24.13+ 上构建。`node scripts/export-source.cjs` 会生成可单独复制到新 Git 仓库的 `git-ready/Termlo-<版本>/`；它不包含依赖、安装包、测试数据、缓存或本地账户信息。需要公开授权他人使用、修改源码时，请在发布前自行选择并添加 LICENSE；当前项目没有默认授予开源许可证。

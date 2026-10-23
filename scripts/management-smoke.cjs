@@ -1,6 +1,6 @@
 const {_electron:electron}=require('playwright-core'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {createService}=require('../services/user-api/server.cjs'),{startFixture}=require('../test/fixture.cjs'),{startProvider,history,response,call,remoteResponder}=require('../test/agent-fixture.cjs');
-const waitForApi=require('./wait-for-api.cjs');require('./build.cjs').build();require('./package-user-api.cjs');
+const waitForApi=require('./wait-for-api.cjs');require('./build.cjs').build();require('./package-user-api.cjs').packageUserApi();
 const root=path.join(__dirname,'..'),output=path.join(root,'test-output'),run=fs.mkdtempSync(path.join(output,'management-'));
 async function main(){
  let service=createService({database:path.join(run,'api/users.sqlite')});await new Promise(r=>service.server.listen(0,'127.0.0.1',r));const url='http://127.0.0.1:'+service.server.address().port;

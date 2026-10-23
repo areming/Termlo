@@ -146,6 +146,7 @@ export function initAssistant({api,state,showError,toast,askCredential,clipboard
       ['规划并部署','让助手自主检查、准备与验证','在选中机器部署 Kubernetes 集群。先检查环境，根据实际情况规划和完成部署，最后验证节点、网络与测试工作负载。','route'],
       ['查找问题','根据现场证据逐步定位','检查选中机器是否存在服务异常、资源瓶颈或网络问题，根据证据定位原因并给出结论。','search'],
     ]) { const card=node('button','suggestion');card.append(icon(ico));const content=node('div');content.append(node('strong','',title),node('small','',detail));card.append(content,icon('arrow'));card.addEventListener('click',()=>{$('#agent-prompt').value=prompt;$('#agent-prompt').focus();});suggestions.append(card); }
+    const deploy=node('button','suggestion');deploy.type='button';deploy.append(icon('server'));const deployText=node('div');deployText.append(node('strong','','部署账户服务'),node('small','','选择一台服务器，交给助手检查并部署'));deploy.append(deployText,icon('arrow'));deploy.addEventListener('click',openDeployDialog);suggestions.append(deploy);
     el.append(suggestions); if(!info?.settings.baseUrl) { const setup=node('button','agent-setup-link','先连接一个支持工具调用的模型'); setup.addEventListener('click',settingsDialog); el.append(setup); } return el;
   }
   function fold(parent,title,content,id) {
@@ -293,6 +294,31 @@ export function initAssistant({api,state,showError,toast,askCredential,clipboard
   on('#agent-settings-open',settingsDialog);
   on('#agent-test',async()=>{const btn=$('#agent-test');btn.disabled=true;$('#agent-settings-result').textContent='正在保存并测试连接与工具调用…';try{await saveSettings();const result=await api.agentTest();$('#agent-settings-result').textContent=result.toolCalling?'连接成功，工具调用正常。':'接口可以连接，但模型没有调用工具。请选用支持工具调用的模型。';}catch(error){$('#agent-settings-result').textContent=error.message;}finally{btn.disabled=false;}});
   on('#agent-new',async()=>{if(busy)return;selected=null;task=null;selectedHosts.clear();$('#agent-prompt').value='';openDetails.clear();await refresh();$('#agent-feed').scrollTop=0;});
+  function openDeployDialog(){
+    if(busy||info?.activeId){toast('先等待或暂停当前任务，再部署账户服务',true);return;}
+    if(!info?.settings.baseUrl){settingsDialog();toast('先连接模型，再部署账户服务');return;}
+    if(!state.hosts.length){toast('请先添加一台服务器');return;}
+    const list=$('#agent-deploy-hosts');list.replaceChildren();$('#agent-deploy-error').textContent='';
+    const preferred=selectedHosts.size===1?[...selectedHosts][0]:state.hosts.length===1?state.hosts[0].id:null;
+    for(const host of state.hosts){
+      const label=node('label','host-choice'),radio=node('input');radio.type='radio';radio.name='agent-deploy-host';radio.value=host.id;radio.checked=host.id===preferred;
+      const details=node('span');details.append(node('strong','',host.name),node('small','',host.username+'@'+host.address));const specs=specificationText(host);if(specs)details.append(node('small','',specs));
+      label.append(radio,hostOSIcon(host),details);list.append(label);
+    }
+    $('#agent-deploy-dialog').showModal();
+  }
+  on('#agent-deploy-open',openDeployDialog);
+  on('#agent-deploy-confirm',async()=>{
+    if(busy)return;const hostId=$('#agent-deploy-hosts input:checked')?.value;
+    if(!hostId){$('#agent-deploy-error').textContent='请选择一台服务器';return;}
+    busy=true;$('#agent-deploy-confirm').disabled=true;$('#agent-deploy-error').textContent='正在准备服务包与连接…';
+    try{
+      const auth=await credentials([hostId]);if(auth===null){$('#agent-deploy-error').textContent='已取消连接验证';return;}
+      const result=await api.agentDeployUserApi({hostId,credentials:auth});
+      $('#agent-deploy-dialog').close();selected=result.id;task=null;selectedHosts=new Set([hostId]);$('#agent-prompt').value='';await refresh();$('#agent-feed').scrollTop=$('#agent-feed').scrollHeight;
+    }catch(error){$('#agent-deploy-error').textContent=error.message;}
+    finally{busy=false;$('#agent-deploy-confirm').disabled=false;renderFeed();}
+  });
   on('#agent-attach',()=>{if(busy||info?.activeId)return;if(attachmentMenu.matches(':popover-open'))return attachmentMenu.hidePopover();attachmentMenu.showPopover();const r=$('#agent-attach').getBoundingClientRect();attachmentMenu.style.left=Math.max(10,Math.min(r.left,innerWidth-230))+'px';attachmentMenu.style.top=Math.max(10,r.top-100)+'px';attachmentMenu.querySelector('button').focus();});
   on('#agent-attach-file',async()=>{attachmentMenu.hidePopover();if(busy||info?.activeId)return;const key=selected||'new';busy=true;renderFeed();try{const files=await api.agentPickAttachments();drafts.set(key,[...(drafts.get(key)||[]),...files]);}finally{busy=false;renderFeed();}});
   on('#agent-attach-project',async()=>{attachmentMenu.hidePopover();if(busy||info?.activeId)return;if(!await confirmAction('分析项目 ZIP？','模型可以读取目录、依赖清单和部署说明。证书、私钥等请用普通文件。','选择项目'))return;const key=selected||'new';busy=true;renderFeed();try{const files=await api.agentPickProject();drafts.set(key,[...(drafts.get(key)||[]),...files]);}finally{busy=false;renderFeed();}});

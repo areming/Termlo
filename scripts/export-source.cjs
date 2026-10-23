@@ -2,7 +2,7 @@ const fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),version=require('../package.json').version;
 const destination=path.join(root,'git-ready',`Termlo-${version}`);
 if(fs.existsSync(destination))throw new Error('源码导出目录已存在：'+destination);
-const roots=['.github','assets','src','scripts','test','services/user-api'];
+const roots=['.github','assets','docs','src','scripts','test','services/user-api'];
 const singles=['.gitignore','package.json','package-lock.json','README.md','README.zh-CN.md','RELEASE_NOTES.md','CHANGELOG.md','FEATURE-GAPS.md','RELEASING.md'];
 const files=[];
 function collect(relative){

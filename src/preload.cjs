@@ -1,5 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const methods = ['init', 'saveHost', 'deleteHost', 'pickKey', 'connectionPlan', 'connect', 'disconnect', 'resize', 'listRemote', 'mkdirRemote', 'pickLocal', 'listLocal', 'transfer', 'knownHosts', 'forgetHostKey', 'readClipboard', 'writeClipboard', 'editMenu', 'agentState', 'agentCheckHosts', 'agentTask', 'agentConfigure', 'agentTest', 'agentStart', 'agentResume', 'agentExecutePlan', 'agentPause', 'agentDelete', 'agentExport'];
+const methods = ['init', 'saveHost', 'deleteHost', 'pickKey', 'connectionPlan', 'connect', 'disconnect', 'resize', 'listRemote', 'mkdirRemote', 'pickLocal', 'listLocal', 'transfer', 'knownHosts', 'forgetHostKey', 'readClipboard', 'writeClipboard', 'editMenu', 'agentState', 'agentCheckHosts', 'agentTask', 'agentConfigure', 'agentTest', 'agentStart', 'agentDeployUserApi', 'agentResume', 'agentExecutePlan', 'agentPause', 'agentDelete', 'agentExport'];
 const scope = ipcRenderer.invoke('termus:scope');
 methods.push('spaceHosts','hostTransferPlan','copyHosts');
 methods.push('agentAnswer');

@@ -45,7 +45,7 @@ function handler(name, action) {
     if (token !== scopeToken) throw new Error('工作空间已切换，请刷新后重试');
     if (workspaces?.moveBlocked) throw new Error('主机移动写入未完成，请重启应用以恢复数据');
     if (switching && name !== 'answerPrompt') throw new Error('正在切换工作空间');
-    if(agent?.protection.busy&&['saveHost','deleteHost','moveHosts','copyHosts','workspaceRemove','agentStart','agentResume','agentExecutePlan','agentManualOpen','connect','connectFiles'].includes(name))throw new Error('部署保护操作进行中，请等待完成');
+    if(agent?.protection.busy&&['saveHost','deleteHost','moveHosts','copyHosts','workspaceRemove','agentStart','agentDeployUserApi','agentResume','agentExecutePlan','agentManualOpen','connect','connectFiles'].includes(name))throw new Error('部署保护操作进行中，请等待完成');
     const marker = {}; if (name !== 'answerPrompt') pendingActions.add(marker);
     try { return await action(...args); } finally { pendingActions.delete(marker); }
   });
@@ -146,6 +146,25 @@ function installHandlers() {
     }finally{pickingAttachments=false;}
   });
   handler('agentDropAttachment', id => agent.attachments.drop(id));
+  handler('agentDeployUserApi', async ({hostId,credentials={}}={}) => {
+    manual.assertFree();agent.ensureReady();agent.hosts.get(hostId);
+    const archive=path.join(root,'dist','termlo-user-api.zip');
+    if(!fs.existsSync(archive))throw new Error('内置账户服务包缺失，请重新安装 Termlo');
+    const temporary=fs.mkdtempSync(path.join(agent.store.directory,'user-api-bundle-'));
+    const filename=path.join(temporary,'termlo-user-api.zip');
+    let files=[];
+    try{
+      fs.writeFileSync(filename,fs.readFileSync(archive),{flag:'wx',mode:0o600});
+      files=await agent.attachments.importFiles([filename],{project:true});
+      try{
+        const task=await agent.start({prompt:require('./user-api-deployment.cjs').deploymentPrompt(),hostIds:[hostId],mode:'autonomous',credentials,attachmentIds:files.map(file=>file.id)});
+        return {id:task.id};
+      }catch(error){for(const file of files)if(!agent.attachments.get(file.id).taskId)agent.attachments.drop(file.id);throw error;}
+    }finally{
+      fs.rmSync(filename,{force:true});
+      fs.rmdirSync(temporary);
+    }
+  });
   handler('agentStart', async input => { manual.assertFree(); const task = await agent.start(input); return { id: task.id }; });
   handler('agentResume', async input => { manual.assertFree(); const task = await agent.resume(input); return { id: task.id }; });
   handler('agentAnswer', async input => { manual.assertFree(); const task = await agent.answer(input); return { id: task.id }; });

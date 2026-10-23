@@ -21,6 +21,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: node scripts/platform-smoke.cjs
+      - run: node scripts/user-api-deploy-smoke.cjs
       - run: npm run dist:win
       - uses: actions/upload-artifact@v4
         with:
@@ -47,6 +48,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: node scripts/platform-smoke.cjs
+      - run: node scripts/user-api-deploy-smoke.cjs
       - run: npm run dist:mac
       - uses: actions/upload-artifact@v4
         with:
