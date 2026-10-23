@@ -1,0 +1,1 @@
+window.ui=SwaggerUIBundle({url:'/openapi.json',dom_id:'#swagger-ui',deepLinking:true,filter:true,displayRequestDuration:true,docExpansion:'list',defaultModelsExpandDepth:0,persistAuthorization:false,validatorUrl:null,queryConfigEnabled:false,tryItOutEnabled:false});

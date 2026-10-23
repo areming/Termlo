@@ -1,0 +1,153 @@
+const { _electron: electron } = require('playwright-core');
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const { startFixture } = require('../test/fixture.cjs');
+require('./build.cjs').build();
+const root = path.join(__dirname, '..');
+const output = path.join(root, 'test-output');
+fs.mkdirSync(output, { recursive: true });
+const run = fs.mkdtempSync(path.join(output, 'ui-'));
+const remoteRoot = path.join(run, 'remote');
+async function main() {
+  const fixture = await startFixture(remoteRoot);
+  const gateway = await startFixture(path.join(run, 'gateway'), { forward: { 'ssh.internal': fixture.port } });
+  fs.mkdirSync(path.join(remoteRoot, 'documents'));
+  fs.writeFileSync(path.join(remoteRoot, 'readme.txt'), 'Hello from the Termus SSH integration fixture.\n');
+  const source = path.join(run, 'upload.txt'); fs.writeFileSync(source, 'Termus 文件往返测试\n' + 'binary-safe\n'.repeat(1000));
+  const target = path.join(run, 'download.txt');
+  const env = { ...process.env, TERMUS_DATA_DIR: path.join(run, 'data') }; delete env.ELECTRON_RUN_AS_NODE;
+  let application;
+  const errors = [];
+  try {
+    const packaged = process.argv.includes('--packaged');
+    application = await electron.launch({ args: packaged ? [] : [root], ...(packaged ? { executablePath: path.join(root, require('../package.json').build.directories.output, 'win-unpacked/Termlo.exe') } : {}), env, timeout: 30000 });
+    application.process().stderr.on('data', data => fs.appendFileSync(path.join(run, 'electron.log'), data));
+    await application.evaluate(({ dialog }, { source, target }) => {
+      dialog.showMessageBox = async () => ({ response: 1 });
+      dialog.showMessageBoxSync = () => 1;
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [source] });
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: target });
+    }, { source, target });
+    const page = await application.firstWindow();
+    await require('./auto-prompts.cjs')(page);
+    await page.evaluate(() => { window.confirm = () => true; });
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('dialog', dialog => dialog.accept().catch(error => console.log('Dialog event:', error.message)));
+    await page.locator('#empty-add').waitFor();
+    await page.screenshot({ path: path.join(output, 'empty.png') });
+    await page.locator('#new-host').click();
+    await page.locator('[name="name"]').fill('Local integration');
+    await page.locator('[name="address"]').fill('127.0.0.1');
+    await page.locator('[name="port"]').fill(String(fixture.port));
+    await page.locator('[name="username"]').fill('tester');
+    await page.locator('[name="group"]').fill('Development');
+    await page.locator('[name="tags"]').fill('local, integration');
+    await page.locator('[name="password"]').fill('local-test');
+    await page.locator('[name="rememberPassword"]').check();
+    await page.locator('#host-form [type="submit"]').click();
+    await page.locator('#host-dialog').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('.host-card').count(), 1);
+    await page.locator('#search').fill('no-match'); assert.equal(await page.locator('.host-card').count(), 0);
+    await page.locator('#search').fill('');
+    await page.getByRole('button', { name: '编辑', exact: true }).click();
+    await page.locator('[name="name"]').fill('Development SSH');
+    await page.locator('#host-form [type="submit"]').click();
+    await page.locator('#host-dialog').waitFor({ state: 'hidden' });
+    const testHost = await page.evaluate(async () => (await window.termus.init()).hosts[0]);
+    await require('./host-action.cjs')(page,page.locator('.host-card').first());
+    await page.waitForFunction(() => document.querySelector('#terminal-status').textContent.includes('已连接'));
+    const id = await page.locator('.terminal-pane').first().getAttribute('data-id');
+    await page.evaluate(id => window.termus.write(id, 'echo hello\r'), id);
+    await page.waitForFunction(() => document.querySelector('.xterm-screen').textContent.includes('received: echo hello'));
+    await page.locator('[data-view="hosts"]').click(); await require('./host-action.cjs')(page,page.locator('.host-card').first());
+    await page.waitForFunction(() => document.querySelector('#session-count').textContent === '2');
+    assert.equal(await page.locator('.tab').count(), 2);
+    const clipboardChecked = await require('./check-clipboard.cjs')(application, page, fixture, output);
+    await require('./check-highlights.cjs')(application, page, fixture, output);
+    await page.screenshot({ path: path.join(output, 'terminal.png') });
+    await page.locator('#open-sftp').click();
+    await page.locator('#remote-files .file-row').first().waitFor();
+    await application.evaluate(({ dialog }, folder) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] }); }, run);
+    await page.locator('#choose-local').click();
+    await page.waitForFunction(folder => document.querySelector('#local-path').textContent === folder, run);
+    await application.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, source);
+    await page.locator('#remote-mkdir').click(); await page.locator('#folder-name').fill('created-in-ui'); await page.locator('#folder-form [type="submit"]').click();
+    await page.waitForFunction(() => document.querySelector('#remote-files').textContent.includes('created-in-ui'));
+    assert.equal(fs.statSync(path.join(remoteRoot, 'created-in-ui')).isDirectory(), true);
+    await page.locator('#upload').click();
+    await page.waitForFunction(() => document.querySelector('#remote-files').textContent.includes('upload.txt'));
+    assert.deepEqual(fs.readFileSync(path.join(remoteRoot, 'upload.txt')), fs.readFileSync(source));
+    await page.locator('#remote-files .file-row').filter({ hasText: 'upload.txt' }).getByRole('button').click();
+    await page.waitForFunction(() => document.querySelector('#transfer-title').textContent.includes('已完成'));
+    assert.deepEqual(fs.readFileSync(target), fs.readFileSync(source));
+    await page.screenshot({ path: path.join(output, 'sftp.png') });
+    // Saved host identity is visible, while secret fields never cross the preload bridge.
+    assert.equal(testHost.encryptedPassword, undefined); assert.equal(testHost.hasPassword, true);
+    await page.locator('[data-view="known"]').click(); await page.locator('.known-item').waitFor();
+    assert.ok((await page.locator('.known-item').textContent()).includes(fixture.fingerprint));
+    await page.locator('[data-view="terminal"]').click();
+    await page.locator('#disconnect').click();
+    await page.waitForFunction(() => document.querySelector('#terminal-status').textContent.includes('已断开'));
+    await page.locator('#reconnect').click(); await page.waitForFunction(() => document.querySelector('#terminal-status').textContent.includes('已连接'));
+    await page.evaluate(async port => {
+      for (const pane of document.querySelectorAll('.terminal-pane')) await window.termus.disconnect(pane.dataset.id);
+      await window.termus.saveHost({ name: 'Bastion Gateway', address: '127.0.0.1', port, username: 'tester', group: 'Infrastructure', auth: 'password', color: 'blue' });
+    }, gateway.port);
+    await page.reload();
+    const targetCard = page.locator('.host-card').filter({ hasText: 'Development SSH' });
+    await require('./host-action.cjs')(page,targetCard,'编辑');
+    await page.locator('[name="address"]').fill('ssh.internal'); await page.locator('[name="port"]').fill('22');
+    const gatewayId = await page.evaluate(async () => (await window.termus.init()).hosts.find(h => h.name === 'Bastion Gateway').id);
+    await require('./select-option.cjs')(page,'#jump-host',gatewayId);
+    await page.locator('[name="clearPassword"]').check();
+    await page.locator('#jump-host-trigger').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(output, 'jump-settings.png') });
+    assert.ok((await page.locator('#route-preview').textContent()).includes('Bastion Gateway'));
+    await page.locator('#host-form [type="submit"]').click(); await page.locator('#host-dialog').waitFor({ state: 'hidden' });
+    await require('./host-action.cjs')(page,targetCard);
+    await page.locator('#credential-dialog').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('#credential-dialog').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('.terminal-pane').count(), 0);
+    await require('./host-action.cjs')(page,targetCard);
+    await page.waitForFunction(() => document.querySelector('#credential-description').textContent.includes('跳板机'));
+    await page.locator('#credential-value').fill('local-test'); await page.locator('#credential-form [type="submit"]').click();
+    await page.waitForFunction(() => document.querySelector('#credential-description').textContent.includes('目标主机'));
+    await page.locator('#credential-value').fill('local-test'); await page.locator('#credential-form [type="submit"]').click();
+    await page.waitForFunction(() => document.querySelector('#terminal-status').textContent.includes('已连接'));
+    assert.ok((await page.locator('#terminal-status').textContent()).includes('1 级跳板'));
+    await page.locator('#terminal-highlights').click();
+    assert.equal(await page.locator('[data-highlight-setting="status"]').isChecked(), false, 'highlight preferences survive reload');
+    await page.locator('[data-highlight-setting="status"]').check();
+    await page.locator('#highlight-dialog .primary').click();
+    assert.deepEqual(gateway.forwarded, ['ssh.internal']);
+    await page.locator('#open-sftp').click();
+    for(const role of ['跳板机','文件连接']){await page.waitForFunction(role=>document.querySelector('#credential-description').textContent.includes(role),role);await page.locator('#credential-value').fill('local-test');await page.locator('#credential-form [type="submit"]').click();}
+    await page.locator('#remote-files .file-row').filter({ hasText: 'upload.txt' }).waitFor();
+    // Visual review uses fictional hosts stored only in this isolated test directory.
+    await page.evaluate(async () => {
+      const samples = [
+        ['Production API', 'api.example.com', 'Production', 'linux, api', 'mint'],
+        ['Database Primary', 'db.example.com', 'Production', 'postgres, db', 'blue'],
+        ['Staging Gateway', 'staging.example.com', 'Staging', 'nginx, gateway', 'purple'],
+        ['Build Runner', 'ci.example.com', 'Development', 'ci, build', 'amber'],
+        ['Personal Lab', '192.0.2.10', 'Homelab', 'debian, lab', 'mint'],
+      ];
+      for (const [name, address, group, tags, color] of samples) await window.termus.saveHost({ name, address, group, tags, color, username: 'admin', port: 22 });
+      const panes = [...document.querySelectorAll('.terminal-pane')];
+      for (const pane of panes) await window.termus.disconnect(pane.dataset.id);
+    });
+    await page.reload(); await page.locator('.host-card').nth(6).waitFor();
+    await page.screenshot({ path: path.join(output, 'hosts.png') });
+    await page.locator('#view-list').click(); assert.equal(await page.locator('#view-list').getAttribute('aria-pressed'), 'true');
+    await page.screenshot({ path: path.join(output, 'hosts-list.png') });
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1000, 700));
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
+    await page.screenshot({ path: path.join(output, 'compact.png') });
+    assert.deepEqual(errors, []);
+    fs.writeFileSync(path.join(output, 'ui-results.json'), JSON.stringify({ passed: true, packaged, version: require('../package.json').version, clipboard: clipboardChecked ? 'passed' : 'skipped: current OS clipboard cannot be fully backed up', checks: ['semantic colors, original-color toggle and persistence', 'ANSI precedence, Unicode, wrapped IP, alternate screen and scrollback', 'host management, two SSH tabs, trust and reconnect', 'SFTP listing, mkdir and binary roundtrip', 'jump selection, credentials, cancellation and forwarded SFTP', 'card/list and 1000px layout', 'no renderer errors', ...(clipboardChecked ? ['native clipboard shortcuts, preview, cancellation, bracketed paste and restoration'] : [])] }, null, 2));
+    console.log((packaged ? 'Packaged' : 'Development') + ' UI integration passed: hosts, two terminals, trust, SFTP roundtrip, reconnect.');
+  } finally { if (application) {await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().forEach(w=>w.destroy())).catch(()=>{});await application.close();} await gateway.close(); await fixture.close(); }
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,0 +1,2 @@
+function metricsFixture(tick=0){return `STAT\ncpu ${100+tick*30} 0 ${50+tick*10} ${850+tick*60} 0 0 0 0 10 0\nUPTIME\n${100+tick*5} 200\nMEM\nMemTotal: 8388608 kB\nMemAvailable: 5242880 kB\nNET\nInter-| Receive | Transmit\n eth0: ${100000+tick*327680} 0 0 0 0 0 0 0 ${50000+tick*102400} 0 0 0 0 0 0 0\n lo: 999 0 0 0 0 0 0 0 999 0 0 0 0 0 0 0\nDISK\nFilesystem 1024-blocks Used Available Capacity Mounted on\n/dev/sda1 104857600 31457280 73400320 30% /\nEND\n`;}
+module.exports={metricsFixture};

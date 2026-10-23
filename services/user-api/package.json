@@ -1,0 +1,8 @@
+{
+  "name": "terminal-user-api",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Standalone account API for the terminal desktop client",
+  "engines": {"node": ">=24.13.0 <25"},
+  "scripts": {"start": "node server.cjs", "test": "node --test test/*.test.cjs"}
+}

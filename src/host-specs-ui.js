@@ -1,0 +1,4 @@
+const capacity=n=>{if(!Number.isFinite(n)||n<=0)return '';const units=['B','KiB','MiB','GiB','TiB','PiB'];let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++;}return `${Number(n.toFixed(1))} ${units[i]}`;};
+export function specificationText(host){const s=host?.specifications;if(!s)return '';return [s.cpuCount?`${s.cpuCount} vCPU`:'',s.memoryTotal?`${capacity(s.memoryTotal)} 内存`:'',s.rootTotal?`根分区 ${capacity(s.rootTotal)}`:''].filter(Boolean).join(' · ');}
+export function specificationStrip(host){const el=document.createElement('div');el.className='host-specifications';el.dataset.specHost=host.id;updateSpecification(el,host);return el;}
+export function updateSpecification(el,host){el.textContent=specificationText(host)||'连接后识别配置';const s=host.specifications;el.title=[host.operatingSystem?.name,s?.architecture,s?.observedAt?'最近识别：'+new Date(s.observedAt).toLocaleString('zh-CN'):'',s?.rootTotal?'容量为根文件系统，非整机磁盘总量':''].filter(Boolean).join('\n');}

@@ -1,0 +1,6 @@
+data
+test
+*.zip
+*.sqlite*
+.env
+.git

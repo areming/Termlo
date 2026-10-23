@@ -1,0 +1,20 @@
+services:
+  user-api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      ALLOW_REGISTRATION: "true"
+      DOCS_ENABLED: "${DOCS_ENABLED:-true}"
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-}"
+    volumes:
+      - users:/app/data
+    mem_limit: 512m
+    cpus: 1.0
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+volumes:
+  users:
