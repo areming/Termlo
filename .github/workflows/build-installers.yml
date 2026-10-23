@@ -71,4 +71,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" release-upload/* --verify-tag --title "Termlo ${GITHUB_REF_NAME#v}" --notes-file RELEASE_NOTES.md
+          mapfile -d '' files < <(find release-upload -type f \( -name 'Termlo-Setup-*.exe' -o -name 'Termlo-*.dmg' \) -print0)
+          test "${#files[@]}" -eq 3
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "Termlo ${GITHUB_REF_NAME#v}" --notes-file RELEASE_NOTES.md
+          else
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" --verify-tag --title "Termlo ${GITHUB_REF_NAME#v}" --notes-file RELEASE_NOTES.md
+          fi
