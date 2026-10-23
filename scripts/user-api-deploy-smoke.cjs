@@ -41,7 +41,7 @@ async function main(){
     assert.match(await page.locator('#agent-deploy-dialog').textContent(),/邮箱密码登录/);
     await page.locator('#agent-deploy-confirm').click();
     await page.locator('#agent-deploy-dialog').waitFor({state:'hidden',timeout:30000});
-    await page.waitForFunction(async()=>{const s=await window.termus.agentState();if(!s.tasks[0])return false;const t=await window.termus.agentTask(s.tasks[0].id);return t.events.some(e=>e.name==='inspect_project'&&e.result);},{},{timeout:30000});
+    await page.waitForFunction(async()=>{const s=await window.termus.agentState();if(!s.tasks[0])return false;const t=await window.termus.agentTask(s.tasks[0].id);return t.events.some(e=>e.name==='inspect_project'&&e.result?.manifests?.some(m=>m.path==='user-api/README.md'));},{},{timeout:30000});
     const result=await page.evaluate(async()=>{const state=await window.termus.agentState();return window.termus.agentTask(state.tasks[0].id);});
     assert.deepEqual(result.hostIds,[host.id]);assert.equal(result.mode,'autonomous');
     assert.match(JSON.stringify(result),/termlo-user-api\.zip/);
