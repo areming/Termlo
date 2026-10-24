@@ -12,6 +12,9 @@ async function main(){
   const page=await app.firstWindow();page.on('pageerror',error=>errors.push(error.message));await page.waitForLoadState('load');
   assert.equal(await page.title(),'Termlo');
   await page.waitForFunction(()=>document.querySelector('.brand-mark img')?.naturalWidth>0);
+  await page.locator('#onboarding:not(.hidden)').waitFor();
+  await page.locator('#onboarding-exit').click();
+  await page.locator('#onboarding').waitFor({state:'hidden'});
   assert.equal(await page.locator('#topbar-workspace-name').textContent(),'默认项目');
   await page.locator('#topbar-assistant').click();assert.equal(await page.locator('#assistant-view').isVisible(),true);
   await page.locator('#topbar-search').click();assert.equal(await page.locator('#hosts-view').isVisible(),true);assert.equal(await page.locator('#search').evaluate(el=>document.activeElement===el),true);

@@ -23,6 +23,9 @@ async function main(){
     app=await electron.launch({args:packaged?[]:[root],...(packaged?{executablePath:path.join(root,require('../package.json').build.directories.output,'win-unpacked/Termlo.exe')}:{}),env});
     const page=await app.firstWindow();await require('./auto-prompts.cjs')(page);
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
+    await page.locator('#onboarding:not(.hidden)').waitFor();
+    await page.locator('#onboarding-exit').click();
+    await page.locator('#onboarding').waitFor({state:'hidden'});
     await page.locator('#new-host').click();
     for(const [name,value] of Object.entries({name:'Demo API node',address:'127.0.0.1',port:String(fixture.port),username:'tester',password:'local-test'}))await page.locator(`#host-form [name="${name}"]`).fill(value);
     await page.locator('#host-form [name="rememberPassword"]').check();await page.locator('#host-form [type="submit"]').click();
