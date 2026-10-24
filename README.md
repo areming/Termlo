@@ -24,9 +24,9 @@
 
 ### 下载与使用
 
-从 [Releases](https://github.com/areming/Termlo/releases) 下载 **1.1.1**：Windows x64、macOS Intel 或 Apple Silicon。安装包暂未签名，macOS 首次打开可能需要在系统设置中允许。详见[发布与兼容说明](RELEASING.md)。
+从 [Releases](https://github.com/areming/Termlo/releases) 下载 **1.1.2**：Windows x64、macOS Intel 或 Apple Silicon。安装包暂未签名，macOS 首次打开可能需要在系统设置中允许。详见[发布与兼容说明](RELEASING.md)。
 
-1. 添加主机，首次连接核对 SSH 指纹。需要跳板机时，在主机编辑页选择已保存的跳板主机。
+1. 首次打开可跟随欢迎引导选择本地或已有线上账户、添加主机并配置模型；各步均可跳过，右上角可重看。首次连接核对 SSH 指纹。需要跳板机时，在主机编辑页选择已保存的跳板主机。
 2. 使用终端或单独连接 SFTP；终端提供命令高亮，也能切回原始配色。
 3. 在助手中填写兼容 OpenAI 的服务地址、模型和密钥。使用 **Plan** 讨论并确认方案，或开启自主任务；执行过程可在执行台看到。
 4. 如需跨设备账户，点击助手顶部的**账户服务**，选择一台主机。Termlo 会附上服务包并启动智能体任务，检查部署条件、询问缺少的信息、执行和验收。该服务是可选的，普通 SSH 不需要注册。
@@ -60,9 +60,9 @@ All four illustrations use **fictional demo data**. They contain no real account
 
 ### Download and start
 
-Download **1.1.1** for Windows x64, macOS Intel, or Apple Silicon from [Releases](https://github.com/areming/Termlo/releases). The installers are unsigned; see the [release notes](RELEASING.md) for compatibility and installation limits.
+Download **1.1.2** for Windows x64, macOS Intel, or Apple Silicon from [Releases](https://github.com/areming/Termlo/releases). The installers are unsigned; see the [release notes](RELEASING.md) for compatibility and installation limits.
 
-Add a host and verify its SSH fingerprint. Use a terminal or connect SFTP independently. To use the agent, configure an OpenAI-compatible endpoint and model, then choose hosts and start a Plan or autonomous task. Commands and checks appear in the execution console.
+On first launch, the optional welcome flow points to local or existing online account setup, your first host, and the model connection. You can skip any step and reopen the guide from the top bar. Add a host and verify its SSH fingerprint. Use a terminal or connect SFTP independently. To use the agent, configure an OpenAI-compatible endpoint and model, then choose hosts and start a Plan or autonomous task. Commands and checks appear in the execution console.
 
 The optional account API provides email/password identities. In Assistant, click **Account service**, select a host, and start the deployment task. Termlo supplies the bundled service package; the agent checks the target, asks for missing network details, deploys, and verifies. Local SSH use requires no account. [Read the deployment guide](docs/intro/account-api.md).
 

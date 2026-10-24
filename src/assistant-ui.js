@@ -375,6 +375,6 @@ export function initAssistant({api,state,showError,toast,askCredential,clipboard
   on('#agent-delete',async()=>{if(busy)return;const id=task?.id;if(id&&await confirmAction('删除任务记录？','将删除对话、执行记录和本机附件副本；服务器上的文件不受影响。','删除')){await api.agentDelete(id);for(const file of drafts.get(id)||[])await api.agentDropAttachment(file.id);drafts.delete(id);selected=null;task=null;await refresh();}});
   api.onEvent(event=>{if(event.type!=='agent')return;clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>run(refresh),120);});
   run(refresh);
-  return {refresh};
+  return {refresh,openSettings:async()=>{await refresh();settingsDialog();}};
 }
 

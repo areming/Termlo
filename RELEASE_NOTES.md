@@ -1,11 +1,11 @@
-# Termlo 1.1.1
+# Termlo 1.1.2
 
-This patch makes the diamond symbol from the illustrated guides Termlo's official logo. The desktop sidebar, repository image, and Windows/macOS installer icons now use the same mark. The project introduction has also been shortened in both languages.
+New installations now open with a short, full-screen welcome flow. Choose local use or connect an existing User API, add the first host, and configure an OpenAI-compatible model. Every step can be skipped. The flow opens Termlo's existing account, host, and model settings, and can be reopened from the top bar.
 
-The 1.1.0 account-service shortcut remains available: select a saved host in Assistant to start an agent task with the bundled User API package. Local SSH still requires no account. Installers are unsigned; see the [guide](README.md) and [release notes](RELEASING.md) for details.
+Skipped host and model setup appears as a small prompt in the relevant module. Existing installations with hosts, tasks, model settings, or multiple accounts/spaces continue to the normal interface. The account service remains optional and can be deployed through Assistant after selecting a host and configuring a model. SSH and SFTP work without it.
 
 ## 中文
 
-此补丁把介绍图里的双菱形标记统一为正式 Logo，更新了桌面侧栏、仓库首页图片及 Windows/macOS 安装图标，并精简中英文项目介绍。
+新安装首次打开时进入简短的全屏欢迎引导：选择本地使用或连接已有账户服务、添加第一台主机、配置兼容 OpenAI 的模型。每一步都能跳过；引导直接打开原有的用户看板、主机编辑和模型设置，也可从顶部工具栏重新打开。
 
-上一版加入的账户服务入口继续保留：在助手中选择一台主机即可携带内置服务包发起智能体部署任务。普通 SSH 无需账户服务。安装包目前尚未签名。
+跳过的主机和模型设置会在对应模块给出小提示。已有主机、任务、模型设置或多个账户/空间的安装继续进入原主界面。账户服务仍是可选组件；选定主机并配置模型后，可在智能助手中发起部署。普通 SSH 和 SFTP 不依赖它。

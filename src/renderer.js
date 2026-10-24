@@ -13,6 +13,7 @@ import { specificationStrip, updateSpecification } from './host-specs-ui.js';
 import { initProtection } from './protection-ui.js';
 import { terminalClipboard } from './terminal-clipboard.js';
 import { TERMINAL_THEME, SemanticHighlights, highlightPreferences } from './terminal-highlights.js';
+import { initOnboarding } from './onboarding-ui.js';
 
 const api = window.termus;
 const isMac = /^Mac/i.test(navigator.platform);
@@ -34,6 +35,7 @@ const clipboardUI = terminalClipboard({ api, state, toast, showError });
 const highlightsUI = highlightPreferences({ state, showError });
 const assistantUI = initAssistant({ api, state, showError, toast, askCredential, clipboardUI });
 const workspaceUI = initWorkspaces({ api, state, showError });
+const onboardingUI = initOnboarding({ api, state, workspaceUI, assistantUI, showView, editHost, showError });
 initProtection({api,state,showError});
 const hostSpaces=hostSpaceUI({api,state,showError,toast,onHosts:()=>window.dispatchEvent(new Event('termus-hosts-changed')),actions:{connect:connectHost,files:openFiles,edit:editHost,remove:async host=>{state.hosts=await api.deleteHost(host.id);window.dispatchEvent(new Event('termus-hosts-changed'));}}});
 let editorHosts=[],editorRequest=0,editorLoading=false;
@@ -63,8 +65,10 @@ function showView(name) {
   if (name === 'known') loadKnown().catch(showError);
   clipboardUI.update();
   highlightsUI.updateVisibility();
+  onboardingUI.updateTips();
 }
 function renderHosts() {
+  onboardingUI.updateTips();
   hostSpaces.closeMenu();
   const groups = [...new Set(state.hosts.map(h => h.group))].sort();
   if (state.group && !groups.includes(state.group)) state.group = '';
@@ -343,4 +347,4 @@ bind('#folder-form', 'submit', async event => { event.preventDefault(); const na
 window.addEventListener('resize', fitActive);
 api.onEvent(event=>{const host=state.hosts.find(h=>h.id===event.hostId);if(!host)return;if(event.type==='host-cloud'){host.cloudIdentity=event.cloudIdentity;return;}if(event.type!=='host-os')return;host.operatingSystem=event.operatingSystem;host.specifications=event.specifications;for(const card of document.querySelectorAll('.host-card'))if(card.dataset.hostId===host.id){const badge=card.querySelector('.os-icon');if(badge)badge.replaceWith(hostOSIcon(host));const spec=card.querySelector('.host-specifications');if(spec)updateSpecification(spec,host);}});
 window.addEventListener('keydown', event => { const primary=isMac?event.metaKey:event.ctrlKey;if(primary && event.key.toLowerCase() === 'k') { event.preventDefault(); if ($$('dialog[open]').length) return; showView('hosts'); $('#search').focus(); } if(primary && event.key.toLowerCase() === 'n') { event.preventDefault(); if (!$$('dialog[open]').length) editHost(); } });
-api.init().then(info => { state.hosts = info.hosts; state.workspace = info.workspace; workspaceUI.setInfo(info.workspace); $('#version').textContent = info.version; $('#host-form').elements.rememberPassword.disabled = !info.encrypted; renderHosts(); const view = sessionStorage.getItem('termus.switchView'); sessionStorage.removeItem('termus.switchView'); if (['hosts','assistant','terminal','sftp','known'].includes(view)) showView(view); }).catch(showError);
+api.init().then(async info => { state.hosts = info.hosts; state.workspace = info.workspace; workspaceUI.setInfo(info.workspace); $('#version').textContent = info.version; $('#host-form').elements.rememberPassword.disabled = !info.encrypted; renderHosts(); const view = sessionStorage.getItem('termus.switchView'); sessionStorage.removeItem('termus.switchView'); if (['hosts','assistant','terminal','sftp','known'].includes(view)) showView(view); await onboardingUI.start(info); }).catch(showError);
