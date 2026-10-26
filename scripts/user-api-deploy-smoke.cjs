@@ -12,7 +12,8 @@ function deployResponder(command,stream){
   stream.exit(0);stream.end();
 }
 async function main(){
-  const fixture=await startFixture(path.join(run,'remote'),{exec:deployResponder});let app;
+  const remoteRoot=path.join(run,'remote');fs.mkdirSync(path.join(remoteRoot,'tmp'),{recursive:true});
+  const fixture=await startFixture(remoteRoot,{exec:deployResponder});let app;
   try{
     const packaged=process.argv.includes('--packaged'),env={...process.env,TERMUS_DATA_DIR:path.join(run,'data')};delete env.ELECTRON_RUN_AS_NODE;
     app=await electron.launch({args:packaged?[]:[root],...(packaged?{executablePath:path.join(root,require('../package.json').build.directories.output,'win-unpacked/Termlo.exe')}:{}),env});
