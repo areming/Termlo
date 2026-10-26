@@ -30,8 +30,17 @@ async function main(){
     assert.equal(await page.locator('#agent-deploy-hosts input').count(),1);assert.equal(await page.locator('#agent-deploy-hosts input').isChecked(),true);
     assert.match(await page.locator('#agent-deploy-dialog').textContent(),/不调用大模型/);
     await page.locator('#agent-deploy-confirm').click();await page.locator('#agent-deploy-dialog').waitFor({state:'hidden',timeout:30000});
-    await page.waitForFunction(async()=>{const s=await window.termus.agentState();if(!s.tasks[0]||s.activeId)return false;const t=await window.termus.agentTask(s.tasks[0].id);return t.status==='completed'&&t.stagingChanges?.length===1&&t.stagingChanges[0].state==='cleaned';},{},{timeout:30000});
-    const result=await page.evaluate(async()=>{const state=await window.termus.agentState();return window.termus.agentTask(state.tasks[0].id);});
+    const taskId=(await page.evaluate(()=>window.termus.agentState())).tasks[0]?.id;assert.ok(taskId,'Deployment task was not created');
+    let result,state;const deadline=Date.now()+30000;
+    while(Date.now()<deadline){
+      state=await page.evaluate(()=>window.termus.agentState());result=await page.evaluate(id=>window.termus.agentTask(id),taskId);
+      if(!state.activeId&&result.status==='completed'&&result.stagingChanges?.length===1&&result.stagingChanges[0].state==='cleaned')break;
+      if(['failed','paused','needs_input'].includes(result.status))throw new Error(`Deployment ended as ${result.status}: ${result.notice||'no notice'}`);
+      await page.waitForTimeout(100);
+    }
+    assert.equal(result.status,'completed','Deployment did not finish before the 30 second deadline');
+    assert.equal(state.activeId,null,'Agent still reports an active task after deployment');
+    assert.equal(result.stagingChanges?.[0]?.state,'cleaned','Remote deployment archive was not cleaned');
     assert.deepEqual(result.hostIds,[host.id]);assert.equal(result.mode,'autonomous');assert.equal(result.status,'completed');
     assert.equal(result.model,'Termlo 内置部署');assert.equal(result.rounds,0);assert.equal(result.tokens,0);
     assert.equal(commands.length,2);assert.ok(commands[0].includes('TERMLO_PREFLIGHT=READY'));assert.ok(commands[1].includes('TERMLO_DEPLOYMENT=READY'));
