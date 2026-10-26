@@ -1,11 +1,15 @@
-# Termlo 1.1.2
+# Termlo 1.2.0
 
-New installations now open with a short, full-screen welcome flow. Choose local use or connect an existing User API, add the first host, and configure an OpenAI-compatible model. Every step can be skipped. The flow opens Termlo's existing account, host, and model settings, and can be reopened from the top bar.
+Remote account sign-in now loads encrypted spaces, host settings, trusted server fingerprints, and non-secret model settings. The account service stores only client-encrypted data. SSH passwords, private-key files, model API keys, task history, and host change ledgers remain local to each device. A revision conflict can be resolved by choosing the cloud or local configuration.
 
-Skipped host and model setup appears as a small prompt in the relevant module. Existing installations with hosts, tasks, model settings, or multiple accounts/spaces continue to the normal interface. The account service remains optional and can be deployed through Assistant after selecting a host and configuring a model. SSH and SFTP work without it.
+The user dashboard groups account details, spaces, and common actions in one place. The bundled User API deployment now performs a read-only Linux, Docker Compose, resource, and port preflight, then runs a fixed installer script and verifies health, OpenAPI, and Swagger. This dedicated flow makes no model calls and initially binds only to the server loopback address. Existing deployments are not overwritten.
+
+The standalone User API is version 1.2.0. It adds version-checked encrypted configuration sync and rotates the wrapped sync key atomically when the account password changes. SSH and SFTP remain available without a remote account.
 
 ## 中文
 
-新安装首次打开时进入简短的全屏欢迎引导：选择本地使用或连接已有账户服务、添加第一台主机、配置兼容 OpenAI 的模型。每一步都能跳过；引导直接打开原有的用户看板、主机编辑和模型设置，也可从顶部工具栏重新打开。
+远程账户登录后会载入端到端加密的空间、主机设置、服务器指纹和非密钥模型设置。账户服务只保存客户端加密后的密文。SSH 密码、私钥文件、模型 API 密钥、任务历史和主机变更账本仍保存在各自设备。遇到多设备版本冲突时，可选择载入云端配置或用本机配置覆盖。
 
-跳过的主机和模型设置会在对应模块给出小提示。已有主机、任务、模型设置或多个账户/空间的安装继续进入原主界面。账户服务仍是可选组件；选定主机并配置模型后，可在智能助手中发起部署。普通 SSH 和 SFTP 不依赖它。
+用户看板将账户资料、空间和常用操作集中在一个界面。内置 User API 部署会先只读检查 Linux、Docker Compose、资源和端口，再运行固定脚本，并核验健康接口、OpenAPI 与 Swagger。这条专用流程不调用大模型，服务默认只监听服务器本机地址，也不会覆盖已有部署。
+
+独立 User API 升级到 1.2.0，新增带版本校验的加密配置同步，并在改密时原子轮换同步密钥包装。普通 SSH 和 SFTP 仍可脱离远程账户使用。

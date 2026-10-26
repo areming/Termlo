@@ -10,7 +10,7 @@ function normalizeHost(input) {
     port: Number(input.port || 22), username: text(input.username),
     group: text(input.group) || '未分组', tags: text(input.tags),
     auth: input.auth === 'key' ? 'key' : 'password',
-    keyPath: text(input.keyPath, 4096), color: ['mint', 'blue', 'purple', 'amber'].includes(input.color) ? input.color : 'mint',
+    keyPath: text(input.keyPath, 4096) || (input.needsKeyFile===true?'__TERMLO_KEY_REQUIRED__':''), ...(input.needsKeyFile===true&&!text(input.keyPath,4096)?{needsKeyFile:true}:{}), color: ['mint', 'blue', 'purple', 'amber'].includes(input.color) ? input.color : 'mint',
     jumpHostId: text(input.jumpHostId, 100),
   };
   if (!host.name || !host.address || !host.username) throw new Error('请填写名称、地址和用户名');

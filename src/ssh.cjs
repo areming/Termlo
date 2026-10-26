@@ -68,6 +68,7 @@ class SSHSession extends EventEmitter {
       },
     };
     if (host.auth === 'key') {
+      if (host.needsKeyFile || !host.keyPath || host.keyPath === '__TERMLO_KEY_REQUIRED__') throw new Error('这台主机的私钥需在本机重新选择');
       const stat = fs.statSync(host.keyPath);
       if (!stat.isFile() || stat.size > 1024 * 1024) throw new Error('私钥文件无效或大于 1 MB');
       options.privateKey = fs.readFileSync(host.keyPath);

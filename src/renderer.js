@@ -99,7 +99,7 @@ function renderHosts() {
     card.addEventListener('dblclick', event => { if (!event.target.closest('button')) connectHost(host); });
     card.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target === card) connectHost(host); });
     const top = element('div', 'host-card-top');top.append(hostOSIcon(host), element('span', 'host-protocol', 'SSH'),hostSpaces.menuButton(host));
-    const tags = element('div', 'tags'); for (const tag of (host.tags || host.group).split(/[,，]/).map(t => t.trim()).filter(Boolean).slice(0, 4)) tags.append(element('span', 'tag', tag));
+    const tags = element('div', 'tags'); for (const tag of (host.tags || host.group).split(/[,，]/).map(t => t.trim()).filter(Boolean).slice(0, 4)) tags.append(element('span', 'tag', tag));if(host.needsKeyFile)tags.append(element('span','tag','本机需选私钥'));
     const details = element('div', 'host-details'); details.append(element('h3', '', host.name), element('div', 'host-address', `${host.username}@${host.address}:${host.port}`));
     const route = element('div', 'host-route'); route.append(icon(host.jumpHostId ? 'route' : 'shield'), element('span', '', host.jumpHostId ? '经由 ' + (state.hosts.find(h => h.id === host.jumpHostId)?.name || '未知跳板机') : '直接连接')); route.title = route.textContent;
     card.append(top, details, specificationStrip(host), tags, route, metricStrip(host.id)); grid.append(card);
@@ -108,13 +108,14 @@ function renderHosts() {
 function authFields() { const key = $('#host-form').elements.auth.value === 'key'; $('#key-fields').classList.toggle('hidden', !key); $('#password-fields').classList.toggle('hidden', key); }
 async function editHost(host) {
   const info=await api.workspaceState(),account=info.accounts.find(a=>a.id===info.accountId);state.workspace=info;
-  const form = $('#host-form'); form.reset();form.elements.id.value=host?.id||'';
+  const form = $('#host-form'); form.reset();form.dataset.needsKeyFile=String(!!host?.needsKeyFile);form.elements.id.value=host?.id||'';
   const spaces=$('#host-space');spaces.replaceChildren();for(const s of account.spaces)spaces.add(new Option(s.name,s.id));spaces.value=info.spaceId;
   editorHosts=state.hosts;editorRequest++;editorLoading=false;
   fillGroupOptions(editorHosts);
   const select = $('#jump-host'); select.replaceChildren(new Option('直接连接（不使用跳板机）', ''));
   for (const candidate of state.hosts) if (candidate.id !== host?.id) select.add(new Option(`${candidate.name} · ${candidate.address}`, candidate.id));
-  for (const key of ['id', 'name', 'address', 'port', 'username', 'group', 'tags', 'auth', 'keyPath', 'jumpHostId']) if (host) form.elements[key].value = host[key] || '';
+  for (const key of ['id', 'name', 'address', 'port', 'username', 'group', 'tags', 'auth', 'keyPath', 'jumpHostId']) if (host) form.elements[key].value = key==='keyPath'&&host.needsKeyFile?'':host[key] || '';
+  $('#key-sync-note').classList.toggle('hidden',!host?.needsKeyFile);
   $('#host-dialog-title').textContent = host ? '编辑主机' : '新建主机';
   $('#clear-password-label').classList.toggle('hidden', !host?.hasPassword);
   form.elements.password.placeholder = host?.hasPassword ? '已保存密码，留空保持不变' : '留空则在连接时输入';
@@ -290,6 +291,7 @@ async function transfer(direction, file) {
 async function loadKnown() { const list = $('#known-list'); list.replaceChildren(); const hosts = await api.knownHosts(); if (!hosts.length) list.append(element('div', 'notice', '首次连接时确认服务器指纹后，记录会显示在这里。')); for (const host of hosts) { const item = element('div', 'known-item'); const text = element('div'); text.append(element('strong', '', host.address + ':' + host.port), element('code', '', host.fingerprint)); item.append(text, button('移除记录', async () => { await api.forgetHostKey(host.key); await loadKnown(); })); list.append(item); } }
 api.onEvent(event => {
   if(event.type==='hosts'){state.hosts=event.hosts;renderHosts();refreshSftpSelect();return;}
+  if(event.type==='account-sync'){window.dispatchEvent(new CustomEvent('termus-account-sync',{detail:event}));return;}
   const fileSession=state.fileSessions.get(event.id);
   if(fileSession){
     if(event.type==='stage')fileSession.stage=event.message;
@@ -323,10 +325,10 @@ bind('#view-list', 'click', () => setLayout(true)); bind('#view-cards', 'click',
 bind('#new-host', 'click', () => editHost()); bind('#empty-add', 'click', () => editHost());
 bind('#search', 'input', renderHosts); bind('#group-filter', 'change', () => { state.group = $('#group-filter').value; renderHosts(); });
 bind('#host-form select[name="auth"]', 'change', authFields);
-bind('#pick-key', 'click', async () => { const file = await api.pickKey(); if (file) $('#host-form').elements.keyPath.value = file; });
+bind('#pick-key', 'click', async () => { const file = await api.pickKey(); if (file) {$('#host-form').elements.keyPath.value = file;$('#host-form').dataset.needsKeyFile='false';$('#key-sync-note').classList.add('hidden');} });
 bind('#host-form', 'submit', async event => {
   event.preventDefault();if(editorLoading)return;if($('#jump-host').value==='__choose__'){$('#host-error').textContent='请选择目标空间中的跳板机，或明确选择直接连接';return;} const form = event.target, submit = form.querySelector('[type="submit"]'); submit.disabled = true;
-  try { const input = Object.fromEntries(new FormData(form)); input.rememberPassword = form.elements.rememberPassword.checked; input.clearPassword = form.elements.clearPassword.checked; state.hosts = await api.saveHost(input); form.elements.password.value = ''; $('#host-dialog').close(); renderHosts(); toast(input.spaceId!==state.workspace.spaceId?'已保存到 '+form.elements.spaceId.selectedOptions[0].textContent:'主机已保存'); }
+  try { const input = Object.fromEntries(new FormData(form)); input.needsKeyFile=form.dataset.needsKeyFile==='true'&&!input.keyPath;input.rememberPassword = form.elements.rememberPassword.checked; input.clearPassword = form.elements.clearPassword.checked; state.hosts = await api.saveHost(input); form.elements.password.value = ''; $('#host-dialog').close(); renderHosts(); toast(input.spaceId!==state.workspace.spaceId?'已保存到 '+form.elements.spaceId.selectedOptions[0].textContent:'主机已保存'); }
   catch (error) { $('#host-error').textContent = message(error); }
   finally { submit.disabled = false; }
 });

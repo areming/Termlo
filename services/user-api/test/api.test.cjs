@@ -4,7 +4,7 @@ async function fixture(t,options={}){const dir=fs.mkdtempSync(path.join(os.tmpdi
 const user={email:'tester@example.com',password:'a-long-test-password-42',name:'Tester',profile:{locale:'zh-CN',timeZone:'Asia/Shanghai'}};
 
 test('Swagger documents all operations, serves local assets and supports only same-origin browser API calls',async t=>{
- const f=await fixture(t);const r=await fetch(f.base+'/openapi.json'),spec=await r.json();assert.equal(spec.openapi,'3.0.3');assert.equal(Object.values(spec.paths).reduce((n,p)=>n+Object.keys(p).length,0),7);assert.equal(spec.components.schemas.Session.properties.expiresAt.format,'int64');
+ const f=await fixture(t);const r=await fetch(f.base+'/openapi.json'),spec=await r.json();assert.equal(spec.openapi,'3.0.3');assert.equal(Object.values(spec.paths).reduce((n,p)=>n+Object.keys(p).length,0),9);assert.equal(spec.components.schemas.Session.properties.expiresAt.format,'int64');
  assert.deepEqual(spec.paths['/v1/me'].get.security,[{bearerAuth:[]}]);assert.deepEqual(spec.paths['/v1/auth/register'].post.security,[]);
  for(const route of ['/docs','/docs/','/docs/swagger-ui-bundle.js','/docs/swagger-ui.css','/docs/swagger-init.js']){const r=await fetch(f.base+route);assert.equal(r.status,200);assert.equal(r.headers.get('x-content-type-options'),'nosniff');assert.match(r.headers.get('content-security-policy'),/connect-src 'self'/);assert.ok((await r.text()).length>50);}
  const registered=await fetch(f.base+'/v1/auth/register',{method:'POST',headers:{Origin:f.base,'Sec-Fetch-Site':'same-origin','Content-Type':'application/json'},body:JSON.stringify(user)});assert.equal(registered.status,201);const session=await registered.json();

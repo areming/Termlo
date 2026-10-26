@@ -9,7 +9,7 @@ methods.push('agentApplyRecovery');
 methods.push('agentDismissRecovery');
 methods.push('protectionDisable');
 const invoke = async (name, ...args) => ipcRenderer.invoke('termus:' + name, await scope, ...args);
-const api = Object.fromEntries([...methods, 'managementState','workspaceRename','workspaceRemove','moveHosts','accountAuthenticate','accountVerify','accountLogout','accountReconnect','accountUpdate','accountPassword','agentPickProject','agentFollowup', 'workspaceState', 'workspaceCreate', 'workspaceSwitch', 'agentManualOpen', 'hostMetrics', 'connectFiles', 'agentPickAttachments', 'agentDropAttachment', 'answerPrompt'].map(name => [name, (...args) => invoke(name, ...args)]));
+const api = Object.fromEntries([...methods, 'managementState','workspaceRename','workspaceRemove','moveHosts','accountAuthenticate','accountVerify','accountLogout','accountReconnect','accountUpdate','accountPassword','accountSyncNow','accountSyncResolve','agentPickProject','agentFollowup', 'workspaceState', 'workspaceCreate', 'workspaceSwitch', 'agentManualOpen', 'hostMetrics', 'connectFiles', 'agentPickAttachments', 'agentDropAttachment', 'answerPrompt'].map(name => [name, (...args) => invoke(name, ...args)]));
 api.write = async (id, data) => ipcRenderer.send('termus:write', await scope, id, data);
 api.onEvent = callback => {
   const handler = async (_event, message) => { if (message.scopeToken === await scope) callback(message); };

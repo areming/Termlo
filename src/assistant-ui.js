@@ -146,7 +146,7 @@ export function initAssistant({api,state,showError,toast,askCredential,clipboard
       ['规划并部署','让助手自主检查、准备与验证','在选中机器部署 Kubernetes 集群。先检查环境，根据实际情况规划和完成部署，最后验证节点、网络与测试工作负载。','route'],
       ['查找问题','根据现场证据逐步定位','检查选中机器是否存在服务异常、资源瓶颈或网络问题，根据证据定位原因并给出结论。','search'],
     ]) { const card=node('button','suggestion');card.append(icon(ico));const content=node('div');content.append(node('strong','',title),node('small','',detail));card.append(content,icon('arrow'));card.addEventListener('click',()=>{$('#agent-prompt').value=prompt;$('#agent-prompt').focus();});suggestions.append(card); }
-    const deploy=node('button','suggestion');deploy.type='button';deploy.append(icon('server'));const deployText=node('div');deployText.append(node('strong','','部署账户服务'),node('small','','选择一台服务器，交给助手检查并部署'));deploy.append(deployText,icon('arrow'));deploy.addEventListener('click',openDeployDialog);suggestions.append(deploy);
+    const deploy=node('button','suggestion');deploy.type='button';deploy.append(icon('server'));const deployText=node('div');deployText.append(node('strong','','部署账户服务'),node('small','','固定脚本检查环境并完成安装，不消耗模型调用'));deploy.append(deployText,icon('arrow'));deploy.addEventListener('click',openDeployDialog);suggestions.append(deploy);
     el.append(suggestions); if(!info?.settings.baseUrl) { const setup=node('button','agent-setup-link','先连接一个支持工具调用的模型'); setup.addEventListener('click',settingsDialog); el.append(setup); } return el;
   }
   function fold(parent,title,content,id) {
@@ -282,12 +282,12 @@ export function initAssistant({api,state,showError,toast,askCredential,clipboard
   }
   function settingsDialog() {
     const form=$('#agent-settings-form');form.reset();for(const key of ['baseUrl','model','maxRounds'])form.elements[key].value=info?.settings[key] || (key==='maxRounds'?80:'');
-    $('#agent-key').placeholder=info?.settings.hasKey?'已加密保存，留空保持不变':'只在此设备使用系统加密保存';$('#agent-settings-result').textContent='';$('#agent-settings-dialog').showModal();
+    $('#agent-key').placeholder=info?.settings.needsApiKey?'此设备尚无 API 密钥，请重新填写':info?.settings.hasKey?'已加密保存，留空保持不变':'只在此设备使用系统加密保存';$('#agent-settings-result').textContent='';$('#agent-settings-dialog').showModal();
   }
   async function saveSettings() {
     const form=$('#agent-settings-form');if(!form.reportValidity())throw new Error('请填写完整模型设置');
     const input=Object.fromEntries(new FormData(form));input.clearKey=form.elements.clearKey.checked;
-    const result=await api.agentConfigure(input);form.elements.apiKey.value='';form.elements.clearKey.checked=false;$('#agent-key').placeholder=result.hasKey?'已加密保存，留空保持不变':'只在此设备使用系统加密保存';await refresh();return result;
+    const result=await api.agentConfigure(input);form.elements.apiKey.value='';form.elements.clearKey.checked=false;$('#agent-key').placeholder=result.needsApiKey?'此设备尚无 API 密钥，请重新填写':result.hasKey?'已加密保存，留空保持不变':'只在此设备使用系统加密保存';await refresh();return result;
   }
   $('#agent-settings-form').addEventListener('submit',event=>{event.preventDefault();run(async()=>{try{await saveSettings();$('#agent-settings-dialog').close();toast('模型设置已保存');}catch(error){$('#agent-settings-result').textContent=error.message;}});});
   $('#agent-settings-dialog').addEventListener('close',()=>{$('#agent-key').value='';});
@@ -296,7 +296,6 @@ export function initAssistant({api,state,showError,toast,askCredential,clipboard
   on('#agent-new',async()=>{if(busy)return;selected=null;task=null;selectedHosts.clear();$('#agent-prompt').value='';openDetails.clear();await refresh();$('#agent-feed').scrollTop=0;});
   function openDeployDialog(){
     if(busy||info?.activeId){toast('先等待或暂停当前任务，再部署账户服务',true);return;}
-    if(!info?.settings.baseUrl){settingsDialog();toast('先连接模型，再部署账户服务');return;}
     if(!state.hosts.length){toast('请先添加一台服务器');return;}
     const list=$('#agent-deploy-hosts');list.replaceChildren();$('#agent-deploy-error').textContent='';
     const preferred=selectedHosts.size===1?[...selectedHosts][0]:state.hosts.length===1?state.hosts[0].id:null;
@@ -311,7 +310,7 @@ export function initAssistant({api,state,showError,toast,askCredential,clipboard
   on('#agent-deploy-confirm',async()=>{
     if(busy)return;const hostId=$('#agent-deploy-hosts input:checked')?.value;
     if(!hostId){$('#agent-deploy-error').textContent='请选择一台服务器';return;}
-    busy=true;$('#agent-deploy-confirm').disabled=true;$('#agent-deploy-error').textContent='正在准备服务包与连接…';
+    busy=true;$('#agent-deploy-confirm').disabled=true;$('#agent-deploy-error').textContent='正在连接并检查服务器环境…';
     try{
       const auth=await credentials([hostId]);if(auth===null){$('#agent-deploy-error').textContent='已取消连接验证';return;}
       const result=await api.agentDeployUserApi({hostId,credentials:auth});

@@ -14,6 +14,6 @@ test('bundled account API is a valid project attachment with deployment instruct
   for(const required of ['user-api/server.cjs','user-api/Dockerfile','user-api/compose.yaml','user-api/README.md','user-api/public/swagger-ui-bundle.js'])assert.ok(paths.has(required),required);
   assert.ok(archive.manifests.some(file=>file.path==='user-api/README.md'&&file.content.includes('SQLite')));
   const prompt=deploymentPrompt();
-  for(const phrase of ['唯一选中','inspect_project','ask_user','/healthz','/docs','持久化 SQLite','不要在正式数据库遗留演示账户'])assert.ok(prompt.includes(phrase),phrase);
+  for(const phrase of ['Linux','检查','内置脚本','不调用模型'])assert.ok(prompt.includes(phrase),phrase);
   assert.ok(!prompt.includes('127.0.0.1:8008'));
 });

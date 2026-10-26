@@ -22,14 +22,37 @@ const initialScopeToken = scopeToken;
 let monitor = new HostMonitor({notify: message => send({ ...message, scopeToken: initialScopeToken })});
 const pendingActions = new Set();
 const osProbes=new Map();
+const syncTimers=new Map();
+const syncMutations=new Set(['saveHost','deleteHost','moveHosts','copyHosts','workspaceCreate','workspaceRename','workspaceRemove','agentConfigure']);
+function syncAccountFor(name,args){if(['workspaceRename','workspaceRemove'].includes(name))return args[1];if(name==='workspaceCreate')return args[0]==='space'?(args[2]||workspaces?.current().account.id):null;return workspaces?.current().account.id;}
+function queueAccountSync(accountId){
+  if(!accounts||!accountId)return;let account;try{account=workspaces.find(accountId).account;}catch{return;}if(!account.identity)return;
+  accounts.markSyncDirty(accountId);const previous=syncTimers.get(accountId);if(previous)clearTimeout(previous);
+  const timer=setTimeout(async()=>{syncTimers.delete(accountId);try{const status=await accounts.syncNow(accountId);send({type:'account-sync',accountId,sync:status});}catch(error){accounts.saveSyncState(accountId,{...(accounts.syncEntries[accountId]||{}),status:'error',message:error.message},null);send({type:'account-sync',accountId,sync:accounts.syncStatus(accountId)});}},800);syncTimers.set(accountId,timer);
+}
+async function finishAccountLogin(accountId,password){
+  const current=workspaces.current().account.id===accountId;
+  if(current&&(agent.active||connections.size)){accounts.saveSyncState(accountId,{...(accounts.syncEntries[accountId]||{}),status:'pending',message:'当前有任务或连接；同步会在你关闭它们并重新登录后加载。'},null);return accounts.syncStatus(accountId);}
+  const result=await accounts.syncOnLogin(accountId,password);
+  if(current&&result.status==='synced'){
+    refreshCurrentContextFromSync(accountId);
+  }
+  return result;
+}
+function refreshCurrentContextFromSync(accountId){
+  if(workspaces.current().account.id!==accountId||agent.active||connections.size)return false;
+  const target=workspaces.current(),hostFile=path.join(target.directory,'hosts.json');
+  if(store.file!==hostFile){agent.close();monitor.close();const context=createContext(target,scopeToken);store=context.store;agent=context.agent;monitor=new HostMonitor({notify:message=>send({...message,scopeToken})});setTimeout(()=>{if(window&&!window.isDestroyed())window.webContents.reload();},80);return true;}
+  store.data=new Store(target.directory,safeStorage).data;const settingsFile=path.join(target.settingsDirectory,'settings.json');agent.store.settings=fs.existsSync(settingsFile)?JSON.parse(fs.readFileSync(settingsFile,'utf8')):{baseUrl:'',model:'',maxRounds:80};agent.hostLedger.syncTasks(agent.store.tasks,store.list());send({type:'hosts',hosts:store.list()});send({type:'agent'});return true;
+}
 SSHSession.observe = (hostId, ssh) => {
   monitor.attach(hostId, ssh);
   const source=store,protection=agent?.protection,token=scopeToken,{identityKey,probeInventory}=require('./host-os.cjs');let key;
   try{key=identityKey(source.get(hostId));}catch{return;}
   protection?.reconnect(hostId);
-  ssh.discoveryReady=require('./cloud-detect.cjs').detectCloud(ssh).then(cloud=>{if(cloud&&token===scopeToken&&source===store&&source.cacheCloud(hostId,cloud,key)){send({type:'host-cloud',hostId,cloudIdentity:cloud,scopeToken:token});}}).catch(()=>{});
+  ssh.discoveryReady=require('./cloud-detect.cjs').detectCloud(ssh).then(cloud=>{if(cloud&&token===scopeToken&&source===store&&source.cacheCloud(hostId,cloud,key)){send({type:'host-cloud',hostId,cloudIdentity:cloud,scopeToken:token});queueAccountSync(workspaces.current().account.id);}}).catch(()=>{});
   const probeKey=source.file+hostId+key;if(Date.now()-(osProbes.get(probeKey)||0)<30000)return;osProbes.set(probeKey,Date.now());
-  probeInventory(ssh).then(info=>{if(info&&token===scopeToken&&source===store&&source.cacheInventory(hostId,info,key)){const host=source.get(hostId);send({type:'host-os',hostId,operatingSystem:host.operatingSystem,specifications:host.specifications,scopeToken:token});}}).catch(()=>{});
+  probeInventory(ssh).then(info=>{if(info&&token===scopeToken&&source===store&&source.cacheInventory(hostId,info,key)){const host=source.get(hostId);send({type:'host-os',hostId,operatingSystem:host.operatingSystem,specifications:host.specifications,scopeToken:token});queueAccountSync(workspaces.current().account.id);}}).catch(()=>{});
 };
 const root = path.join(__dirname, '..');
 const dataPath = process.env.TERMUS_DATA_DIR || (app.isPackaged ? path.join(app.getPath('appData'), 'Termus') : path.join(root, 'data'));
@@ -47,7 +70,7 @@ function handler(name, action) {
     if (switching && name !== 'answerPrompt') throw new Error('正在切换工作空间');
     if(agent?.protection.busy&&['saveHost','deleteHost','moveHosts','copyHosts','workspaceRemove','agentStart','agentDeployUserApi','agentResume','agentExecutePlan','agentManualOpen','connect','connectFiles'].includes(name))throw new Error('部署保护操作进行中，请等待完成');
     const marker = {}; if (name !== 'answerPrompt') pendingActions.add(marker);
-    try { return await action(...args); } finally { pendingActions.delete(marker); }
+    let result,success=false;try { result=await action(...args);success=true;return result; } finally { pendingActions.delete(marker);if(success&&syncMutations.has(name))queueAccountSync(syncAccountFor(name,args)); }
   });
 }
 function getSession(id) { const connection = connections.get(id); if (!connection) throw new Error('连接已关闭'); return connection; }
@@ -85,12 +108,14 @@ function installHandlers() {
   handler('managementState',()=>({...workspaces.public(),accounts:workspaces.public().accounts.map(a=>({...a,login:accounts.status(a.id)}))}));
   handler('workspaceRename',(kind,accountId,spaceId,name)=>{workspaces.rename(kind,accountId,spaceId,name);return workspaces.public();});
   handler('workspaceRemove',async(kind,accountId,spaceId)=>{if(accounts.status(accountId).signedIn&&kind==='account')throw new Error('请先退出登录');workspaces.remove(kind,accountId,spaceId);if(kind==='account')accounts.forget(accountId);return workspaces.public();});
-  handler('accountAuthenticate',input=>accounts.authenticate(input));
+  handler('accountAuthenticate',async input=>{const result=await accounts.authenticate(input);await finishAccountLogin(result.accountId,input.password);return result;});
   handler('accountVerify',id=>accounts.verify(id));
   handler('accountLogout',id=>accounts.logout(id));
-  handler('accountReconnect',(id,input)=>accounts.reconnect(id,input));
+  handler('accountReconnect',async(id,input)=>{const result=await accounts.reconnect(id,input);await finishAccountLogin(result.accountId,input.password);return result;});
   handler('accountUpdate',(id,input)=>accounts.update(id,input));
   handler('accountPassword',(id,input)=>accounts.password(id,input));
+  handler('accountSyncNow',async id=>{const previous=accounts.syncEntries[id]?.revision||0,result=await accounts.syncNow(id);if(result.status==='synced'&&result.revision!==previous)refreshCurrentContextFromSync(id);return result;});
+  handler('accountSyncResolve',async(id,choice)=>{const result=await accounts.resolveSyncConflict(id,choice);refreshCurrentContextFromSync(id);return result;});
   handler('moveHosts',(destinationId,ids)=>{
     agent.protection.assertTransfer(ids);
     if(pendingActions.size>1||agent.active||connections.size)throw new Error('移动前请暂停助手，并关闭当前空间的终端和文件连接');
@@ -147,23 +172,10 @@ function installHandlers() {
   });
   handler('agentDropAttachment', id => agent.attachments.drop(id));
   handler('agentDeployUserApi', async ({hostId,credentials={}}={}) => {
-    manual.assertFree();agent.ensureReady();agent.hosts.get(hostId);
+    manual.assertFree();agent.hosts.get(hostId);
     const archive=path.join(root,'dist','termlo-user-api.zip');
     if(!fs.existsSync(archive))throw new Error('内置账户服务包缺失，请重新安装 Termlo');
-    const temporary=fs.mkdtempSync(path.join(agent.store.directory,'user-api-bundle-'));
-    const filename=path.join(temporary,'termlo-user-api.zip');
-    let files=[];
-    try{
-      fs.writeFileSync(filename,fs.readFileSync(archive),{flag:'wx',mode:0o600});
-      files=await agent.attachments.importFiles([filename],{project:true});
-      try{
-        const task=await agent.start({prompt:require('./user-api-deployment.cjs').deploymentPrompt(),hostIds:[hostId],mode:'autonomous',credentials,attachmentIds:files.map(file=>file.id)});
-        return {id:task.id};
-      }catch(error){for(const file of files)if(!agent.attachments.get(file.id).taskId)agent.attachments.drop(file.id);throw error;}
-    }finally{
-      fs.rmSync(filename,{force:true});
-      fs.rmdirSync(temporary);
-    }
+    const task=await agent.deployUserApi({hostId,credentials,archive:fs.readFileSync(archive)});return {id:task.id};
   });
   handler('agentStart', async input => { manual.assertFree(); const task = await agent.start(input); return { id: task.id }; });
   handler('agentResume', async input => { manual.assertFree(); const task = await agent.resume(input); return { id: task.id }; });
@@ -354,5 +366,7 @@ app.whenReady().then(async () => {
   window.on('closed', () => { monitor.close();prompts.cancelAll();agent.close(); for (const ssh of connections.values()) ssh.close(); connections.clear(); window = null; });
   await window.loadURL(indexUrl);
   window.show();
+  const activeAccountId=workspaces.current().account.id;
+  if(accounts.status(activeAccountId).signedIn){const previous=accounts.syncEntries[activeAccountId]?.revision||0;void accounts.syncNow(activeAccountId).then(status=>{if(status.status==='synced'&&status.revision!==previous)refreshCurrentContextFromSync(activeAccountId);send({type:'account-sync',accountId:activeAccountId,sync:status});}).catch(error=>{accounts.saveSyncState(activeAccountId,{...(accounts.syncEntries[activeAccountId]||{}),status:'error',message:error.message},null);send({type:'account-sync',accountId:activeAccountId,sync:accounts.syncStatus(activeAccountId)});});}
 }).catch(error => { dialog.showErrorBox('Termlo 启动失败', error.message); app.exit(1); });
 app.on('window-all-closed', () => app.quit());

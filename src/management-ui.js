@@ -39,31 +39,35 @@ export function managementUI({api,state,showError,onInfo,select}){
    choices.append(remote,local);content.append(choices);return;
   }
   const account=info.accounts.find(a=>a.id===accountId),top=heading(spaceOnly?'项目空间':account.name);if(!spaceOnly){top.prepend(avatar(account,'large'));top.append(glyph('edit','重命名账户',()=>rename('account',account.id,account.name)),glyph('trash','移除空账户',()=>remove('account')),button(account.id===info.accountId?'当前账户':'进入账户',()=>leaveAndSwitch(account.id),account.id===info.accountId?'selected':''));}content.append(top);
-  const tabs=node('div','management-tabs');for(const [key,title]of [['spaces','项目空间'],['profile','账户资料'],['move','移动主机']].filter(([key])=>!spaceOnly||key!=='profile'))tabs.append(button(title,()=>{section=key;render();},section===key?'selected':''));content.append(tabs);
   if(section==='login')return;
-  if(section==='spaces'){
-   for(const s of account.spaces){const row=node('div','management-row');row.append(icon('folder'),node('strong','',s.name));if(account.id===info.accountId&&s.id===info.spaceId)row.append(node('small','','当前'));else row.append(button('进入',()=>leaveAndSwitch(account.id,s.id)));row.append(glyph('edit','重命名 '+s.name,()=>rename('space',s.id,s.name)),glyph('trash','移除 '+s.name,()=>remove('space',s.id)));content.append(row);}
-   content.append(button('+ 新建项目空间',()=>create('space')));
-  }else if(section==='profile'){
-   const profile=node('div','management-profile');
-   const status=node('div','management-profile-status');status.append(node('span','management-status-dot'+(account.login.signedIn?' is-signed-in':'')),node('strong','',!account.identity?'本地用户':account.login.signedIn?'此设备已登录':'此设备未登录'),node('small','',!account.identity?'无需账户服务':account.login.signedIn?'登录凭据保存在此设备':'空间与主机仍可离线使用'));profile.append(status);
-   if(account.identity){
-    const details=node('div','management-profile-details');for(const [label,value]of [['邮箱',account.identity.email],['账户服务',account.identity.baseUrl]]){const row=node('div');row.append(node('small','',label),node('span','',value));details.append(row);}profile.append(details);
-    if(account.login.signedIn)profile.append(node('p','field-help','凭据有效期：'+new Date(account.login.expiresAt).toLocaleString()+'。服务是否在线，请点“验证连接”。'));
-    const actions=node('div','management-profile-actions');
-    if(account.login.signedIn)actions.append(button('验证连接',async()=>{await api.accountVerify(account.id);await refresh();}));
-    actions.append(button(account.login.signedIn?'更换服务地址 / 重新登录':'重新登录 / 更新服务地址',()=>login('login',account.identity.baseUrl,account.identity.email,account.id)));
-    if(account.login.hasSession)actions.append(button('从此设备退出',async()=>{await api.accountLogout(account.id);await refresh();}));
-    profile.append(actions,node('p','field-help','退出会立即清除本机凭据；旧服务不可达时，远端令牌可能持续到自身过期。账户空间不会删除。'));
-   }else profile.append(node('p','field-help','数据保存在当前设备，无需连接账户服务。'),button('登录其他用户',()=>login()));
-   if(account.identity&&account.login.signedIn){const actions=node('div','management-profile-actions');actions.append(button('编辑资料',()=>form('保存资料',[{name:'name',label:'显示名称',value:account.identity.displayName||account.name,max:60},{name:'locale',label:'语言（可选）',value:account.identity.profile?.locale,required:false,max:80},{name:'timeZone',label:'时区（可选）',value:account.identity.profile?.timeZone,required:false,max:80}],v=>api.accountUpdate(account.id,v))),button('修改密码',()=>form('修改密码',[{name:'oldPassword',label:'当前密码',type:'password',min:12,max:128},{name:'password',label:'新密码（修改后所有设备需重新登录）',type:'password',min:12,max:128}],v=>api.accountPassword(account.id,v))));profile.append(actions);}content.append(profile);
-  }else if(section==='move'){
-   if(account.id!==info.accountId){content.append(node('p','field-help','请先进入此账户再移动主机。'));return;}
+  const profile=node('div','management-profile management-dashboard-profile');
+  if(account.identity){
+   const sync=account.login.sync||{},syncLabels={synced:'配置已同步',pending:'等待同步',unsupported:'服务版本较旧',conflict:'多设备修改冲突',error:'同步遇到问题','not-loaded':'尚未同步'};
+   const status=node('div','management-profile-status');status.append(node('span','management-status-dot'+(sync.status==='synced'?' is-signed-in':'')),node('strong','',account.login.signedIn?'远程账户 · '+(syncLabels[sync.status]||'同步状态待检查'):'远程账户 · 此设备未登录'),node('small','',sync.message||'空间、主机信息以及模型地址、模型名和调用预算使用账户密码加密同步；SSH 密码、私钥和模型 API 密钥只保存在本机。'));profile.append(status);
+   const details=node('div','management-profile-details');for(const [label,value]of [['邮箱',account.identity.email],['账户服务',account.identity.baseUrl],['同步状态',syncLabels[sync.status]||'尚未同步']]){const row=node('div');row.append(node('small','',label),node('span','',value||'—'));details.append(row);}profile.append(details);
+   const actions=node('div','management-profile-actions');
+   if(account.login.signedIn){actions.append(button('验证连接',async()=>{await api.accountVerify(account.id);await refresh();}),button('立即同步',async()=>{await api.accountSyncNow(account.id);await refresh();}));}
+   actions.append(button(account.login.signedIn?'更换服务地址 / 重新登录':'重新登录 / 更新服务地址',()=>login('login',account.identity.baseUrl,account.identity.email,account.id)));
+   if(account.login.hasSession)actions.append(button('从此设备退出',async()=>{await api.accountLogout(account.id);await refresh();}));
+   profile.append(actions);
+   if(sync.status==='conflict'&&account.login.signedIn){
+    const conflict=node('div','management-sync-conflict');conflict.append(node('strong','','检测到此设备与云端都有更新'),node('p','','选择保留哪一份配置。选择本机版本会覆盖云端；选择云端版本会替换本机空间和主机信息。'));
+    const choices=node('div','management-profile-actions');
+    choices.append(button('载入云端配置',async()=>{if(!await confirmAction('载入云端配置？','此设备尚未同步的空间和主机设置会被云端版本替换。','载入'))return;await api.accountSyncResolve(account.id,'cloud');await refresh();}),button('用本机覆盖云端',async()=>{if(!await confirmAction('用本机配置覆盖云端？','其他设备将会在下次同步时载入此设备的配置。','覆盖云端'))return;await api.accountSyncResolve(account.id,'local');await refresh();},'primary'));
+    conflict.append(choices);profile.append(conflict);
+   }
+   if(account.login.signedIn){const actions=node('div','management-profile-actions');actions.append(button('编辑资料',()=>form('保存资料',[{name:'name',label:'显示名称',value:account.identity.displayName||account.name,max:60},{name:'locale',label:'语言（可选）',value:account.identity.profile?.locale,required:false,max:80},{name:'timeZone',label:'时区（可选）',value:account.identity.profile?.timeZone,required:false,max:80}],v=>api.accountUpdate(account.id,v))),button('修改密码',()=>form('修改密码',[{name:'oldPassword',label:'当前密码',type:'password',min:12,max:128},{name:'password',label:'新密码（修改后所有设备需重新登录）',type:'password',min:12,max:128}],v=>api.accountPassword(account.id,v))));profile.append(actions);}
+  }else profile.append(node('p','field-help','本地用户数据仅保存在此设备。登录远程账户后，空间和主机配置可在设备间同步。'),button('登录 / 注册远程账户',()=>login()));
+  profile.classList.toggle('hidden',spaceOnly);content.append(profile);
+  const spacesHeading=node('div','management-subheading');spacesHeading.append(node('h4','','项目空间'),node('small','',account.spaces.length+' 个'));content.append(spacesHeading);
+  for(const s of account.spaces){const row=node('div','management-row');row.append(icon('folder'),node('strong','',s.name));if(account.id===info.accountId&&s.id===info.spaceId)row.append(node('small','','当前'));else row.append(button('进入',()=>leaveAndSwitch(account.id,s.id)));row.append(glyph('edit','重命名 '+s.name,()=>rename('space',s.id,s.name)),glyph('trash','移除 '+s.name,()=>remove('space',s.id)));content.append(row);}
+  content.append(button('+ 新建项目空间',()=>create('space')));
+  if(!spaceOnly&&account.id===info.accountId){
+   const details=node('details','management-inline-move'),summary=node('summary','','移动主机到其他空间');details.append(summary,node('p','field-help','任务历史留在原空间；涉及的跳板链路需一起移动。'));
    const destinations=account.spaces.filter(s=>s.id!==info.spaceId),list=node('div','management-hosts'),chosen=new Set();
-   content.append(node('p','field-help','从当前空间移动到本账户已有空间。任务历史留在原空间；涉及的跳板链路需一起移动。'));
-   for(const h of state.hosts){const label=node('label','host-choice'),c=node('input');c.type='checkbox';c.value=h.id;c.addEventListener('change',()=>c.checked?chosen.add(h.id):chosen.delete(h.id));label.append(c,node('span','',h.name+' · '+h.address));list.append(label);}content.append(list);
-   const target=node('select');target.id='management-move-target';target.setAttribute('aria-label','目标空间');for(const s of destinations)target.add(new Option(s.name,s.id));content.append(target);
-   const move=button('移动所选主机',async()=>{if(!chosen.size)throw new Error('请先选择主机');if(!await confirmAction('移动 '+chosen.size+' 台主机？','凭据与指纹一并移动；原任务历史不移动，也不会被授权访问新空间。','移动'))return;state.hosts=await api.moveHosts(target.value,[...chosen]);window.dispatchEvent(new Event('termus-hosts-changed'));await refresh();},'primary');move.disabled=!destinations.length||!state.hosts.length;content.append(move);cleanupSelects=initSelects(content);
+   for(const h of state.hosts){const label=node('label','host-choice'),c=node('input');c.type='checkbox';c.value=h.id;c.addEventListener('change',()=>c.checked?chosen.add(h.id):chosen.delete(h.id));label.append(c,node('span','',h.name+' · '+h.address));list.append(label);}details.append(list);
+   const target=node('select');target.id='management-move-target';target.setAttribute('aria-label','目标空间');for(const s of destinations)target.add(new Option(s.name,s.id));details.append(target);
+   const move=button('移动所选主机',async()=>{if(!chosen.size)throw new Error('请先选择主机');if(!await confirmAction('移动 '+chosen.size+' 台主机？','凭据与指纹一并移动；原任务历史留在原空间。','移动'))return;state.hosts=await api.moveHosts(target.value,[...chosen]);window.dispatchEvent(new Event('termus-hosts-changed'));await refresh();},'primary');move.disabled=!destinations.length||!state.hosts.length;details.append(move);content.append(details);cleanupSelects=initSelects(details);
   }
  }
  async function open(initial='spaces',options={}){
@@ -71,5 +75,6 @@ export function managementUI({api,state,showError,onInfo,select}){
   dialog=node('dialog','management-dialog'+(spaceOnly?' space-management':''));dialog.id='management-dialog';const head=node('div','dialog-heading');head.append(node('h2','',spaceOnly?'空间管理':'用户看板'),glyph('close','关闭管理',()=>dialog.close()));
   const layout=node('div','management-layout');layout.append(node('aside','management-accounts'),node('section','management-content'));dialog.append(head,layout);document.body.append(dialog);dialog.addEventListener('close',()=>{cleanupSelects();dialog.remove();},{once:true});dialog.showModal();render();if(initial==='login')login();
  }
+ window.addEventListener('termus-account-sync',()=>{if(dialog?.open)refresh().catch(showError);});
  return {open};
 }

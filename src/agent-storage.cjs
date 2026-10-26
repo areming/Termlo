@@ -33,10 +33,12 @@ class AgentStorage {
     const next = { baseUrl, model, maxRounds };
     // Changing providers must not silently forward an existing key to a new endpoint.
     if (baseUrl === this.settings.baseUrl && !input.clearKey) next.encryptedKey = this.settings.encryptedKey;
+    if ((this.settings.needsApiKey || (this.settings.encryptedKey && baseUrl !== this.settings.baseUrl)) && !String(input.apiKey || '').trim() && !input.clearKey) next.needsApiKey = true;
     if (input.apiKey) {
       if (!this.vault.isEncryptionAvailable()) throw new Error('系统加密不可用，无法保存 API 密钥');
       if (typeof input.apiKey !== 'string' || input.apiKey.length > 8192) throw new Error('API 密钥无效');
-      next.encryptedKey = this.vault.encryptString(input.apiKey.trim()).toString('base64');
+      if (input.apiKey.trim()) next.encryptedKey = this.vault.encryptString(input.apiKey.trim()).toString('base64');
+      else delete next.encryptedKey;
     }
     this.write('settings.json', next); this.settings = next; return this.publicSettings();
   }

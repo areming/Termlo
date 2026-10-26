@@ -1,4 +1,4 @@
-const { randomUUID } = require('node:crypto');
+const { randomUUID,createHash } = require('node:crypto');
 const { AgentStorage, now } = require('./agent-storage.cjs');
 const { AgentRemote } = require('./agent-remote.cjs');
 const { AgentConsole } = require('./agent-console.cjs');
@@ -109,6 +109,37 @@ class AgentService {
     const attachments=this.attachments.bind(attachmentIds,task);
     this.event(task,'user',task.prompt,{attachments});
     this.launch(task,credentials); return task;
+  }
+  async deployUserApi({hostId,credentials={},archive}={}){
+    if(this.active||this.hostCheck)throw new Error('助手正在运行或核对中，请稍候');this.hosts.get(hostId);
+    if(!Buffer.isBuffer(archive)||!archive.length||archive.length>25*1024*1024)throw new Error('内置用户服务包无效');
+    const deployment=require('./user-api-deployment.cjs'),prompt=deployment.deploymentPrompt(),task=this.store.create(prompt,[hostId],'autonomous');
+    this.event(task,'user',task.prompt);const route=structuredClone(this.hosts.route(hostId)),routes=new Map([[hostId,route]]),auth={},secrets=[this.store.key()];
+    for(const host of route){const supplied=credentials?.[host.id]||{},raw=host.auth==='key'?(supplied.passphrase||''):(supplied.password??this.hosts.password(host.id)??''),value=String(raw);auth[host.id]=host.auth==='key'?{passphrase:value}:{password:value};if(value)secrets.push(value);}
+    const resources=this.hosts.list().filter(host=>host.id===hostId).map(({keyPath,hasPassword,...host})=>structuredClone(host));
+    const controller=new AbortController(),console=new AgentConsole({task,resources,redact:text=>scrub(text,secrets),notify:this.notify,save:()=>this.store.save(task)});
+    const remote=this.remoteFactory({recoveryId:task.id,routes,credentials:auth,verify:this.verify,signal:controller.signal,onOutput:event=>console.handle(event),onStagingChange:record=>{task.stagingChanges||=[];const index=task.stagingChanges.findIndex(item=>item.id===record.id),entry={...record,identity:require('./host-os.cjs').identityKey(this.hosts.get(record.hostId)),at:now()};if(index<0)task.stagingChanges.push(entry);else task.stagingChanges[index]=entry;this.emit(task);}});
+    const run={task,controller,remote,console,resources,secrets,startedAt:now(),settings:{...this.store.settings},rounds:0};this.active=run;task.status='running';task.model='Termlo 内置部署';task.rounds=0;task.tokens=0;task.notice='正在检查服务器并准备部署…';this.emit(task);
+    run.done=(async()=>{
+      let staged=null;
+      const wait=async job=>{while(job.status==='running'){controller.signal.throwIfAborted();job=await remote.wait(job.id,20);}return job;};
+      try{
+        const preflight=await wait(await remote.start(hostId,deployment.preflightCommand(),60));
+        if(preflight.status!=='completed'||preflight.exitCode!==0||!preflight.stdout.includes('TERMLO_PREFLIGHT=READY')){task.status='failed';task.notice='环境检查未通过，未开始安装。'+(preflight.stdout||preflight.stderr||preflight.error||'请查看执行终端中的检查结果。').split('\n').filter(Boolean).slice(-4).join('；');this.event(task,'notice',task.notice);return;}
+        this.event(task,'notice','环境检查通过；正在准备恢复保护并运行内置部署脚本。');
+        if(this.protection)await this.ensureProtection(run);
+        const item={id:randomUUID(),name:'termlo-user-api.zip',size:archive.length,sha256:createHash('sha256').update(archive).digest('hex')};
+        staged=await remote.uploadAttachment(hostId,'/tmp',item,archive);
+        const result=await wait(await remote.start(hostId,deployment.deploymentCommand(staged.path),1800));
+        if(result.status!=='completed'||result.exitCode!==0||!result.stdout.includes('TERMLO_DEPLOYMENT=READY'))throw new Error(result.stderr||result.error||'部署脚本未通过服务健康检查；远端目录可能已创建，请按执行终端结果核对。');
+        task.status='completed';task.notice='';const remoteDir=(result.stdout.match(/^INSTALL_DIR=(.+)$/m)||[])[1]||`$HOME/termlo-user-api-${deployment.userApiVersion()}/user-api`,report={headline:'用户服务已安装并通过接口检查',highlights:['仅监听服务器本机 127.0.0.1:8080；尚未配置公网域名或 HTTPS。','可用地址：http://127.0.0.1:8080 · Swagger：http://127.0.0.1:8080/docs','安装目录与数据卷位置见下方交付项。'],checks:[{label:'Linux、Docker Compose、磁盘、内存与端口',status:'passed'},{label:'/healthz、OpenAPI 与 Swagger',status:'passed'}],artifacts:[{label:'安装目录',value:remoteDir,hostId},{label:'本机访问地址',value:'http://127.0.0.1:8080',hostId},{label:'Swagger 文档',value:'http://127.0.0.1:8080/docs',hostId},{label:'持久化数据卷',value:'termlo-user-api_users',hostId}],outcome:'completed'};
+        this.event(task,'result',report.headline,{report});
+      }catch(error){if(task.status==='running')task.status=controller.signal.aborted?'paused':'failed';task.notice=controller.signal.aborted?'部署已停止；请检查执行终端中的远端状态。':scrub(error.message,secrets);this.event(task,'notice',task.notice);}
+      finally{
+        if(staged){const record=(task.stagingChanges||[]).find(change=>change.attachmentId===staged.attachmentId&&change.path===staged.path);if(record&&record.state==='applied'){try{await remote.cleanStaging(record);record.state='cleaned';}catch{record.state='unknown';task.notice=(task.notice?task.notice+' ':'')+'远端临时压缩包未能自动清理，请核对 /tmp 中本次任务目录。';this.event(task,'notice',task.notice);}}}
+      }
+    })().catch(error=>{if(task.status==='running'){task.status='failed';task.notice=scrub(error.message,secrets);this.event(task,'notice',task.notice);}}).finally(()=>{remote.close();console.close();if(this.active===run)this.active=null;this.emit(task);});
+    return task;
   }
   ensureReady() { if(this.active) throw new Error('已有任务运行中，请先暂停或等待完成');if(this.hostCheck)throw new Error('主机状态核对中，请稍候'); if(!this.store.settings.baseUrl || !this.store.settings.model) throw new Error('请先配置模型接口'); }
   async checkHosts({hostIds=[],credentials={}}={}){
