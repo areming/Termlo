@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
+const sftpOps = require('./sftp-ops.cjs');
 
 const call = (object, method, ...args) => new Promise((resolve, reject) => object[method](...args, (error, value) => error ? reject(error) : resolve(value)));
 function remotePath(value) {
@@ -119,6 +120,43 @@ class SSHSession extends EventEmitter {
     };
   }
   async mkdir(directory) { await call(await this.sftp(), 'mkdir', remotePath(directory)); }
+  async mkdirp(directory) {
+    return sftpOps.mkdirp(await this.sftp(), remotePath(directory));
+  }
+  async removeFile(target) {
+    await sftpOps.removeFile(await this.sftp(), remotePath(target));
+  }
+  // options: { force, signal, onProgress } (see sftp-ops removeTree).
+  async removeDirectory(target, options = {}) {
+    return sftpOps.removeTree(await this.sftp(), remotePath(target), options);
+  }
+  // options: { overwrite } — an existing destination is refused by default.
+  async rename(from, to, options = {}) {
+    await sftpOps.renameRemote(await this.sftp(), remotePath(from), remotePath(to), options);
+  }
+  // Uploads a local file or directory into an existing remote directory.
+  // options: { name, conflict, resolveConflict, onProgress, signal } (see sftp-ops transferTree).
+  async upload(localPath, remoteDirectory, options = {}) {
+    const sftp = await this.sftp();
+    return sftpOps.transferTree({
+      ...options,
+      from: sftpOps.localAdapter(),
+      to: sftpOps.remoteAdapter(sftp),
+      source: localPath,
+      targetDirectory: remotePath(remoteDirectory),
+    });
+  }
+  // Downloads a remote file or directory into an existing local directory.
+  async download(remoteSource, localDirectory, options = {}) {
+    const sftp = await this.sftp();
+    return sftpOps.transferTree({
+      ...options,
+      from: sftpOps.remoteAdapter(sftp),
+      to: sftpOps.localAdapter(),
+      source: remotePath(remoteSource),
+      targetDirectory: localDirectory,
+    });
+  }
   async transfer(direction, local, remote, progress = () => {}) {
     if (this.transferring) throw new Error('当前连接已有文件正在传输，请稍后');
     this.transferring = true;
@@ -151,7 +189,7 @@ class SSHSession extends EventEmitter {
       } else {
         temporary = local + '.termus-' + randomUUID() + '.part';
         await pipeline(sftp.createReadStream(remote), meter, fs.createWriteStream(temporary, { flags: 'wx', mode: 0o600 }));
-        await fs.promises.rename(temporary, local);
+        await require('./atomic-file.cjs').rename(temporary, local);
       }
       temporary = null;
       progress({ transferred, total, done: true });

@@ -31,6 +31,7 @@ async function main(){
    await app.evaluate(({dialog,BrowserWindow})=>{dialog.showMessageBox=async()=>({response:1});dialog.showMessageBoxSync=()=>1;BrowserWindow.getAllWindows()[0].setContentSize(1580,940);});
    await page.waitForFunction(()=>!!window.termus);
    await require('./auto-prompts.cjs')(page);
+   await page.locator('#onboarding:not(.hidden)').waitFor();await page.locator('#onboarding-exit').click();await page.locator('#onboarding').waitFor({state:'hidden'});
    for(const theme of ['dark','light']){
      if(theme==='light')await page.locator('#theme-toggle').click();
      await page.locator('#security-open').click();await page.locator('#security-dialog').waitFor({state:'visible'});

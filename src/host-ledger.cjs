@@ -1,3 +1,4 @@
+const atomicFile=require('./atomic-file.cjs');
 const fs=require('node:fs');
 const path=require('node:path');
 const {createHash,randomUUID}=require('node:crypto');
@@ -39,7 +40,7 @@ class HostLedger {
   }
   write(record){
     const file=this.file(record.hostId),temp=file+'.'+randomUUID()+'.tmp';
-    try{fs.writeFileSync(temp,JSON.stringify(record,null,2),{mode:0o600});fs.renameSync(temp,file);}finally{if(fs.existsSync(temp))fs.unlinkSync(temp);}
+    try{fs.writeFileSync(temp,JSON.stringify(record,null,2),{mode:0o600});atomicFile.renameSync(temp,file);}finally{if(fs.existsSync(temp))fs.unlinkSync(temp);}
     this.notify();
   }
   identity(host){return identityKey({...host,address:String(host.address||'')});}

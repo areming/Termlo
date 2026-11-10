@@ -1,3 +1,4 @@
+const atomicFile=require('./atomic-file.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -18,7 +19,7 @@ class Workspaces {
     }
     this.find(this.data.activeAccount); this.commit(); this.recoverMove();
   }
-  commit() { const temp = this.file + '.' + randomUUID() + '.tmp'; try { fs.writeFileSync(temp, JSON.stringify(this.data, null, 2), { mode: 0o600 }); fs.renameSync(temp, this.file); } finally { if (fs.existsSync(temp)) fs.unlinkSync(temp); } }
+  commit() { const temp = this.file + '.' + randomUUID() + '.tmp'; try { fs.writeFileSync(temp, JSON.stringify(this.data, null, 2), { mode: 0o600 }); atomicFile.renameSync(temp, this.file); } finally { if (fs.existsSync(temp)) fs.unlinkSync(temp); } }
   name(value) { if (typeof value !== 'string' || !value.trim() || value.trim().length > 60) throw new Error('名称应为 1–60 个字符'); return value.trim(); }
   find(accountId, spaceId) {
     const account = this.data.accounts.find(a => a.id === accountId); if (!account) throw new Error('账户不存在');
@@ -130,7 +131,7 @@ class Workspaces {
       const from=ledgerFile(sourceDir,host.id),to=ledgerFile(destinationDir,host.id);
       if(fs.existsSync(from)){fs.mkdirSync(path.dirname(to),{recursive:true});fs.copyFileSync(from,to,fs.constants.COPYFILE_EXCL);}
     }
-    const file=path.join(this.root,'host-move.json'),temp=file+'.tmp';fs.writeFileSync(temp,JSON.stringify(record),{mode:0o600});fs.renameSync(temp,file);
+    const file=path.join(this.root,'host-move.json'),temp=file+'.tmp';fs.writeFileSync(temp,JSON.stringify(record),{mode:0o600});atomicFile.renameSync(temp,file);
     try{destination.commit(record.destination.data);source.commit(record.source.data);fs.unlinkSync(file);}
     catch(error){
       // A durable journal is the decision to complete the move. Retry both stores

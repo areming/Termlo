@@ -1,0 +1,369 @@
+// Tests for the 2.0 agent kernel (src/agent/). Each safety invariant has at least one test.
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { createHash } = require('node:crypto');
+const { AgentService } = require('../src/agent/service.cjs');
+const { createRedactor } = require('../src/agent/redact.cjs');
+const { sseParser, accumulator, finalize } = require('../src/agent/model.cjs');
+const { toolsFor } = require('../src/agent/tools.cjs');
+
+const vault = { isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s), decryptString: b => b.toString() };
+const sha = text => createHash('sha256').update(text).digest('hex');
+let callId = 0;
+const call = (name, args) => ({ id: 'c' + (++callId), type: 'function', function: { name, arguments: JSON.stringify(args) } });
+const reply = (calls, content = null) => ({ message: { role: 'assistant', content, ...(calls.length ? { tool_calls: calls } : {}) }, tokens: 10, usage: {} });
+
+// A scripted fake server. Commands are recorded exactly as received.
+function fakeRemote(behaviour = {}) {
+  const log = { commands: [], writes: [], reads: [] };
+  const files = new Map(Object.entries(behaviour.files || {}));
+  let next = 0;
+  const factory = options => {
+    const remote = {
+      jobs: new Map(),
+      async start(hostId, command) {
+        log.commands.push({ hostId, command });
+        const outcome = behaviour.run?.(command) || { status: 'completed', exitCode: 0, stdout: 'ok' };
+        const job = { id: 'job-' + (++next), hostId, command, stdout: '', stderr: '', exitCode: null, ...outcome };
+        remote.jobs.set(job.id, job);
+        options.onOutput({ type: 'start', job });
+        if (job.status !== 'running') options.onOutput({ type: 'end', job });
+        return { ...job };
+      },
+      async wait(id, seconds) {
+        if (seconds) await new Promise(resolve => setTimeout(resolve, 5));
+        const job = remote.jobs.get(id);
+        if (!job) throw new Error('missing job');
+        return { ...job };
+      },
+      cancelJob(id) { const job = remote.jobs.get(id); job.status = 'interrupted'; return { ...job }; },
+      async readFile(hostId, file) {
+        log.reads.push(file);
+        if (!files.has(file)) throw Object.assign(new Error('No such file'), { code: 2 });
+        const content = files.get(file);
+        return { hostId, path: file, size: content.length, modifiedAt: '', content, truncated: false, sha256: sha(content) };
+      },
+      async writeFile(hostId, file, content, expected) {
+        const current = files.has(file) ? sha(files.get(file)) : 'missing';
+        if (current !== expected) throw new Error('文件内容已变化');
+        log.writes.push({ file, content });
+        files.set(file, content);
+        return { id: 'w' + log.writes.length, hostId, path: file, sha256: sha(content), bytes: content.length, backup: null };
+      },
+      async cleanRecovery() { return { cleaned: true }; },
+      async cleanStaging() { return { cleaned: true }; },
+      close() {},
+    };
+    return remote;
+  };
+  return { factory, log, files };
+}
+
+function setup(t, { script, remote = fakeRemote(), password = 'root', mode, syncWaitSeconds } = {}) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'termlo-kernel-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const host = { id: 'h1', name: 'web', address: '192.0.2.10', port: 22, username: 'root', auth: 'password' };
+  const requests = [];
+  let round = 0;
+  const agent = new AgentService({
+    directory, vault,
+    hosts: { get: id => { if (id !== 'h1') throw new Error('主机不存在'); return host; }, list: () => [host], route: () => [host], password: () => password },
+    remoteFactory: remote.factory,
+    ...(syncWaitSeconds ? { syncWaitSeconds } : {}),
+    complete: async options => { requests.push(options); return script(round++, options, agent); },
+  });
+  agent.configure({ baseUrl: 'https://model.example/v1', model: 'test', apiKey: 'sk-test-key-0123456789abcdef', maxRounds: 12 });
+  t.after(() => agent.close());
+  return { agent, requests, remote, mode };
+}
+
+async function runTask(agent, options) {
+  const task = agent.start({ hostIds: ['h1'], mode: 'execute', ...options });
+  await agent.active?.done;
+  return task;
+}
+
+const toolResults = task => task.messages.filter(m => m.role === 'tool').map(m => JSON.parse(m.content));
+
+// ---- redaction --------------------------------------------------------------
+
+test('short passwords are never replaced literally; long secrets and token formats are', () => {
+  const redact = createRedactor(['root', 'a-much-longer-secret-value']);
+  assert.equal(redact.weak, true);
+  assert.equal(redact.text('ls /root && nginx root /srv'), 'ls /root && nginx root /srv');
+  assert.equal(redact.text('token a-much-longer-secret-value end'), 'token [已隐藏凭据] end');
+  assert.match(redact.text('DB_PASSWORD=hunter2'), /DB_PASSWORD=\[已隐藏\]/);
+  assert.match(redact.text('Authorization: Bearer abcdefghijklmnop'), /Bearer \[已隐藏\]/);
+  assert.match(redact.text('key sk-or-v1-0123456789abcdef0123'), /\[已隐藏令牌\]/);
+  assert.match(redact.text('-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----'), /^\[已隐藏私钥\]$/);
+  assert.deepEqual(redact.deep({ a: ['x password: y'] }), { a: ['x password: [已隐藏]'] });
+  assert.equal(createRedactor(['long-enough-secret']).weak, false);
+});
+
+// ---- invariant 7: executed arguments are untouched ---------------------------
+
+test('commands run exactly as the model wrote them, even when they contain the password', async t => {
+  const command = 'ls /root; printf "server { root /usr/share/nginx/html; }" > /tmp/x.conf';
+  const { agent, remote } = setup(t, {
+    password: 'root',
+    script: round => round === 0
+      ? reply([call('run', { hostId: 'h1', command })])
+      : reply([call('finish', { outcome: 'completed', headline: '好了', summary: '完成', checks: [{ label: '命令', status: 'passed' }] })]),
+  });
+  const task = await runTask(agent, { prompt: '检查' });
+  assert.equal(remote.log.commands[0].command, command);
+  assert.equal(task.status, 'completed');
+});
+
+// ---- invariant 1: host scope -------------------------------------------------
+
+test('a host outside the task is rejected before anything runs', async t => {
+  const { agent, remote } = setup(t, {
+    script: round => round === 0
+      ? reply([call('run', { hostId: 'other', command: 'id' })])
+      : reply([call('finish', { outcome: 'needs_input', headline: '无法', summary: '无', checks: [] })]),
+  });
+  const task = await runTask(agent, { prompt: 'x' });
+  assert.equal(remote.log.commands.length, 0);
+  assert.match(toolResults(task)[0].error, /不在本任务范围/);
+});
+
+// ---- invariant 2: plan mode cannot change servers ---------------------------
+
+test('plan mode exposes no mutating tool and rejects one if the model calls it anyway', async t => {
+  const names = toolsFor('plan').map(t => t.function.name);
+  for (const name of ['run', 'write_file', 'upload', 'finish']) assert.ok(!names.includes(name));
+  const { agent, remote } = setup(t, {
+    script: round => round === 0
+      ? reply([call('run', { hostId: 'h1', command: 'rm -rf /srv/app' })])
+      : reply([call('plan', { title: '方案', summary: '一句话', steps: ['做事'], checks: ['验证'], risks: [], questions: [] })]),
+  });
+  const task = await runTask(agent, { prompt: '规划', mode: 'plan' });
+  assert.equal(remote.log.commands.length, 0);
+  assert.match(toolResults(task)[0].error, /规划阶段不能使用/);
+  assert.equal(task.status, 'plan_ready');
+});
+
+// ---- invariant 3: read before write -----------------------------------------
+
+test('write_file needs a read of the same path with a matching hash in this run', async t => {
+  const remote = fakeRemote({ files: { '/etc/app.conf': 'old' } });
+  const { agent } = setup(t, {
+    remote,
+    script: round => [
+      reply([call('write_file', { hostId: 'h1', path: '/etc/app.conf', content: 'new', sha256: sha('old') })]),
+      reply([call('read_file', { hostId: 'h1', path: '/etc/app.conf' })]),
+      reply([call('write_file', { hostId: 'h1', path: '/etc/app.conf', content: 'new', sha256: sha('old') })]),
+      reply([call('finish', { outcome: 'completed', headline: '改好了', summary: '完成', checks: [{ label: '写入', status: 'passed' }] })]),
+    ][round],
+  });
+  const task = await runTask(agent, { prompt: '改配置' });
+  const results = toolResults(task);
+  assert.match(results[0].error, /先用 read_file/);
+  assert.equal(results[2].sha256, sha('new'));
+  assert.equal(remote.files.get('/etc/app.conf'), 'new');
+  assert.equal(remote.log.writes.length, 1);
+});
+
+// ---- invariant 4: unknown outcome blocks further change ---------------------
+
+test('after a timeout the host accepts no change until a read-only check succeeds', async t => {
+  const remote = fakeRemote({ run: command => command === 'slow' ? { status: 'timeout', exitCode: null, error: '超时' } : null });
+  const { agent } = setup(t, {
+    remote,
+    script: round => [
+      reply([call('run', { hostId: 'h1', command: 'slow' })]),
+      reply([call('run', { hostId: 'h1', command: 'again' })]),
+      reply([call('inspect', { hostId: 'h1', topic: 'overview' })]),
+      reply([call('run', { hostId: 'h1', command: 'again' })]),
+      reply([call('finish', { outcome: 'completed', headline: '好', summary: '好', checks: [{ label: 'x', status: 'passed' }] })]),
+    ][round],
+  });
+  const task = await runTask(agent, { prompt: 'x' });
+  const results = toolResults(task);
+  assert.match(results[0].warning, /结果未知/);
+  assert.match(results[1].error, /结果未知的操作/);
+  assert.equal(results[3].exitCode, 0);
+  assert.deepEqual(remote.log.commands.map(c => c.command).filter(c => c !== 'slow' && !c.includes('uname')), ['again']);
+  assert.equal(task.status, 'completed');
+});
+
+test('a resumed task must observe each previously changed host before changing it again', async t => {
+  const { agent, remote } = setup(t, {
+    script: round => [
+      reply([call('run', { hostId: 'h1', command: 'first' })]),
+      reply([call('ask', { questions: [{ header: '确认', question: '继续吗？', options: [] }] })]),
+      reply([call('run', { hostId: 'h1', command: 'second' })]),
+      reply([call('read_file', { hostId: 'h1', path: '/etc/hostname' })]),
+      reply([call('run', { hostId: 'h1', command: 'second' })]),
+      reply([call('finish', { outcome: 'completed', headline: '好', summary: '好', checks: [{ label: 'x', status: 'passed' }] })]),
+    ][round],
+  });
+  remote.files.set('/etc/hostname', 'web');
+  const task = await runTask(agent, { prompt: 'x' });
+  assert.equal(task.status, 'awaiting_input');
+  agent.answer({ id: task.id, requestId: task.interaction.id, answers: [{ questionId: task.interaction.questions[0].id, text: '继续' }] });
+  await agent.active.done;
+  const results = toolResults(task);
+  assert.match(results.at(-4).error, /任务刚恢复/);
+  assert.deepEqual(remote.log.commands.map(c => c.command), ['first', 'second']);
+  assert.equal(task.status, 'completed');
+});
+
+test('operations in flight when the app stopped become unknown and the task pauses', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'termlo-kernel-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(directory, 'agent', 'tasks'), { recursive: true });
+  const id = '00000000-0000-4000-8000-000000000001';
+  fs.writeFileSync(path.join(directory, 'agent', 'tasks', id + '.json'), JSON.stringify({
+    id, createdAt: '2026-01-01', status: 'running', hostIds: ['h1'], messages: [], events: [], followups: [], fileChanges: [], stagingChanges: [],
+    operations: [{ id: 'o1', tool: 'run', hostId: 'h1', state: 'dispatched' }],
+  }));
+  const agent = new AgentService({ directory, vault, hosts: { get: () => ({}), list: () => [], route: () => [], password: () => '' } });
+  const task = agent.store.get(id);
+  assert.equal(task.status, 'paused');
+  assert.equal(task.operations[0].state, 'unknown');
+  agent.close();
+});
+
+// ---- invariant 5: user input invalidates in-flight responses -----------------
+
+test('a followup discards the in-flight response and is delivered before anything else runs', async t => {
+  let release;
+  const { agent, remote, requests } = setup(t, {
+    script: round => {
+      if (round === 0) return new Promise(resolve => { release = resolve; });
+      if (round === 1) return reply([call('finish', { outcome: 'needs_input', headline: '等待', summary: '按补充停止', checks: [] })]);
+    },
+  });
+  const task = agent.start({ prompt: '部署', hostIds: ['h1'], mode: 'execute' });
+  while (!release) await new Promise(resolve => setImmediate(resolve));
+  agent.followup({ id: task.id, message: '不要重启服务' });
+  release(reply([call('run', { hostId: 'h1', command: 'systemctl restart app' })]));
+  await agent.active.done;
+  assert.equal(remote.log.commands.length, 0);
+  assert.ok(JSON.stringify(requests[1].messages).includes('不要重启服务'));
+  assert.ok(!task.messages.some(m => m.tool_calls?.some(c => c.function.arguments.includes('restart'))));
+});
+
+// ---- invariant 6: completion needs verification after the last change ---------
+
+test('completed is refused when the last change failed and nothing succeeded afterwards', async t => {
+  const remote = fakeRemote({ run: command => command === 'deploy' ? { status: 'failed', exitCode: 1, stderr: 'boom' } : null });
+  const { agent } = setup(t, {
+    remote,
+    script: round => [
+      reply([call('run', { hostId: 'h1', command: 'deploy' })]),
+      reply([call('finish', { outcome: 'completed', headline: '好', summary: '好', checks: [{ label: 'x', status: 'passed' }] })]),
+      reply([call('run', { hostId: 'h1', command: 'curl -sf localhost' })]),
+      reply([call('finish', { outcome: 'completed', headline: '好', summary: '好', checks: [{ label: 'x', status: 'passed' }] })]),
+    ][round],
+  });
+  const task = await runTask(agent, { prompt: 'x' });
+  assert.match(toolResults(task)[1].error, /没有成功的现场验证/);
+  assert.equal(task.status, 'completed');
+});
+
+test('a check reported as failed turns completed into needs_input', async t => {
+  const { agent } = setup(t, {
+    script: round => round === 0
+      ? reply([call('run', { hostId: 'h1', command: 'curl localhost' })])
+      : reply([call('finish', { outcome: 'completed', headline: '部署好了', summary: '…', checks: [{ label: '首页', status: 'passed' }, { label: 'HTTPS', status: 'failed' }] })]),
+  });
+  const task = await runTask(agent, { prompt: 'x' });
+  assert.equal(task.status, 'needs_input');
+  assert.match(task.report.headline, /有验收项未通过/);
+});
+
+// ---- ergonomics --------------------------------------------------------------
+
+test('long commands return a short id and wait collects the result', async t => {
+  const remote = fakeRemote({ run: command => command === 'build' ? { status: 'running' } : null });
+  const { agent } = setup(t, {
+    remote,
+    syncWaitSeconds: 0.05,
+    script: (round, _options, service) => {
+      if (round === 1) {
+        // The build finishes while the model is thinking.
+        const job = [...service.active.remote.jobs.values()][0];
+        Object.assign(job, { status: 'completed', exitCode: 0, stdout: 'built' });
+      }
+      return [
+        reply([call('run', { hostId: 'h1', command: 'build' })]),
+        reply([call('wait', { id: 'j1' })]),
+        reply([call('finish', { outcome: 'completed', headline: '好', summary: '好', checks: [{ label: 'x', status: 'passed' }] })]),
+      ][round];
+    },
+  });
+  const task = await runTask(agent, { prompt: 'x' });
+  const results = toolResults(task);
+  assert.equal(results[0].id, 'j1');
+  assert.equal(results[0].status, 'running');
+  assert.equal(results[1].output, 'built');
+  assert.equal(task.operations[0].state, 'done');
+  assert.equal(task.status, 'completed');
+});
+
+test('the request prefix is stable: system prompt and tools do not change between rounds', async t => {
+  const { agent, requests } = setup(t, {
+    script: round => [
+      reply([call('inspect', { hostId: 'h1', topic: 'overview' })]),
+      reply([call('finish', { outcome: 'completed', headline: '好', summary: '好', checks: [{ label: 'x', status: 'passed' }] })]),
+    ][round],
+  });
+  await runTask(agent, { prompt: 'x' });
+  assert.equal(requests[0].messages[0].content, requests[1].messages[0].content);
+  assert.deepEqual(requests[0].tools, requests[1].tools);
+  assert.deepEqual(requests[0].messages.slice(0, 2), requests[1].messages.slice(0, 2));
+  assert.match(requests[1].messages.at(-1).content, /当前状态/);
+});
+
+test('the operation record is on disk before the command is sent', async t => {
+  let onDisk;
+  const remote = fakeRemote();
+  const original = remote.factory;
+  const { agent } = setup(t, {
+    remote: { ...remote, factory: options => {
+      const r = original(options);
+      const start = r.start.bind(r);
+      r.start = async (...args) => {
+        const file = path.join(agent.store.taskDirectory, agent.active.task.id + '.json');
+        onDisk = JSON.parse(fs.readFileSync(file, 'utf8')).operations;
+        return start(...args);
+      };
+      return r;
+    } },
+    script: round => round === 0
+      ? reply([call('run', { hostId: 'h1', command: 'apt-get install -y nginx' })])
+      : reply([call('finish', { outcome: 'completed', headline: '好', summary: '好', checks: [{ label: 'x', status: 'passed' }] })]),
+  });
+  await runTask(agent, { prompt: 'x' });
+  assert.equal(onDisk.length, 1);
+  assert.equal(onDisk[0].state, 'dispatched');
+});
+
+// ---- streaming parser --------------------------------------------------------
+
+test('streamed tool call fragments are assembled and text deltas reported', () => {
+  const texts = [];
+  const acc = accumulator(text => texts.push(text));
+  const feed = sseParser(acc.add);
+  const chunks = [
+    'data: {"choices":[{"delta":{"content":"先看"}}]}\n\n',
+    'data: {"choices":[{"delta":{"content":"一下"}}]}\n\ndata: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"run","arguments":"{\\"host"}}]}}]}\n\n',
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"Id\\":\\"h1\\"}"}}]},"finish_reason":"tool_calls"}]}\n\n',
+    'data: {"choices":[],"usage":{"total_tokens":42,"prompt_tokens":40,"prompt_tokens_details":{"cached_tokens":30}}}\n\n',
+    'data: [DONE]\n\n',
+  ];
+  // Split arbitrarily to simulate packet boundaries.
+  const all = chunks.join('');
+  for (let i = 0; i < all.length; i += 7) feed(all.slice(i, i + 7));
+  const result = finalize(acc.state);
+  assert.deepEqual(texts.join(''), '先看一下');
+  assert.equal(result.message.tool_calls[0].function.arguments, '{"hostId":"h1"}');
+  assert.equal(result.tokens, 42);
+  assert.equal(result.usage.cached, 30);
+});

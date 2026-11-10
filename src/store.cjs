@@ -1,3 +1,4 @@
+const atomicFile=require('./atomic-file.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -38,7 +39,7 @@ class Store {
     const temporary = this.file + '.' + randomUUID() + '.tmp';
     try {
       fs.writeFileSync(temporary, JSON.stringify(next, null, 2), { mode: 0o600 });
-      fs.renameSync(temporary, this.file);
+      atomicFile.renameSync(temporary, this.file);
       this.data = next;
     } finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
   }

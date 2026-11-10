@@ -52,7 +52,7 @@ async function main(){
   await page.locator('#agent-export').click();await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('导出'));assert.equal(JSON.parse(fs.readFileSync(path.join(run,'export.json'))).id,task.id);
   await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(1000,700));await page.screenshot({path:path.join(output,'assistant-compact.png')});
   assert.ok(await page.locator('#agent-send').isVisible());assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  await page.locator('#agent-new').click();await page.locator('#agent-prompt').fill('暂停验证：运行任务后暂停');await page.locator('#agent-send').click();
+  await page.locator('#agent-new').click();await page.locator('#agent-hosts-open').click();await page.locator(`#agent-host-picker input[value="${ids[0]}"]`).check();await page.locator('[data-close="agent-hosts-dialog"]').last().click();await page.locator('#agent-prompt').fill('暂停验证：运行任务后暂停');await page.locator('#agent-send').click();
   await waitForApi(page,async()=>{const s=await window.termus.agentState();if(!s.activeId)return false;const t=await window.termus.agentTask(s.activeId);return t.events.some(e=>e.name==='read_job');});
   await page.locator('#agent-stop').click();await page.waitForFunction(()=>document.querySelector('#agent-status').textContent==='已暂停');
   await page.locator('#agent-prompt').fill('核对并继续');await page.locator('#agent-send').click();await page.waitForFunction(()=>document.querySelector('#agent-status').textContent==='已完成');

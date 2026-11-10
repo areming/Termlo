@@ -1,9 +1,10 @@
+const atomicFile=require('./atomic-file.cjs');
 const fs=require('node:fs'),path=require('node:path');
 const {randomBytes,randomUUID,createCipheriv,createDecipheriv,scrypt}=require('node:crypto');
 const {promisify}=require('node:util');
 const {normalizeHost,connectionRoute}=require('./store.cjs');
 const derive=promisify(scrypt),UUID=/^[a-f0-9-]{36}$/i,MAX_PLAINTEXT=8*1024*1024;
-function atomicJson(file,value){fs.mkdirSync(path.dirname(file),{recursive:true});const temp=file+'.'+randomUUID()+'.tmp';try{fs.writeFileSync(temp,JSON.stringify(value,null,2),{mode:0o600});fs.renameSync(temp,file);}finally{if(fs.existsSync(temp))fs.unlinkSync(temp);}}
+function atomicJson(file,value){fs.mkdirSync(path.dirname(file),{recursive:true});const temp=file+'.'+randomUUID()+'.tmp';try{fs.writeFileSync(temp,JSON.stringify(value,null,2),{mode:0o600});atomicFile.renameSync(temp,file);}finally{if(fs.existsSync(temp))fs.unlinkSync(temp);}}
 function seal(key,value){const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,iv),ciphertext=Buffer.concat([cipher.update(value),cipher.final()]);return{iv:iv.toString('base64'),tag:cipher.getAuthTag().toString('base64'),ciphertext:ciphertext.toString('base64')};}
 function open(key,value){const decipher=createDecipheriv('aes-256-gcm',key,Buffer.from(value.iv,'base64'));decipher.setAuthTag(Buffer.from(value.tag,'base64'));return Buffer.concat([decipher.update(Buffer.from(value.ciphertext,'base64')),decipher.final()]);}
 async function wrappingKey(password,salt){return derive(password,salt,32,{N:32768,r:8,p:1,maxmem:64*1024*1024});}

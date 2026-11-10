@@ -1,0 +1,189 @@
+/*
+ * Termlo 2.0 design tokens.
+ *
+ * This is the ONLY file allowed to contain raw colors, sizes and durations.
+ * Everything else references these custom properties.
+ *
+ * Themes switch by redefining tokens on :root[data-theme="…"]. Dark is the
+ * default; the app always stamps data-theme on <html>.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ── Surfaces ─────────────────────────────────────────── */
+  --bg: #181a1f;               /* app background */
+  --sidebar-bg: #131519;       /* nav rail */
+  --panel: #202329;            /* cards, panels */
+  --surface-raised: #262c35;   /* buttons, popovers */
+  --surface-inset: #141a21;    /* input interiors, code blocks */
+  --hover: #303640;            /* hover fill */
+  --scrim: #0a0c0fa3;          /* dialog backdrop */
+
+  /* ── Lines ────────────────────────────────────────────── */
+  --line: #30343d;
+  --line-strong: #505966;
+
+  /* ── Text ─────────────────────────────────────────────── */
+  --text: #e3e6ed;
+  --muted: #969eac;            /* ≥ 4.5:1 on bg, panel and surface-raised */
+
+  /* ── Accent (mint) ────────────────────────────────────── */
+  --accent: #90d5c4;
+  --accent-hover: #a8e1d3;
+  --accent-ink: #153c33;       /* text on solid accent */
+  --accent-soft: #90d5c41f;    /* selected backgrounds */
+  --accent-text: #90d5c4;      /* accent used as text, incl. on accent-soft */
+
+  /* ── Semantic status ──────────────────────────────────── */
+  --success: #8fd19e;
+  --success-soft: #8fd19e1f;
+  --warning: #e8c37a;
+  --warning-soft: #e8c37a1f;
+  --danger: #eaa1a1;
+  --danger-hover: #f0b6b6;
+  --danger-ink: #3d1519;       /* text on solid danger */
+  --danger-soft: #eaa1a11f;
+  --info: #9cc4f0;
+  --info-soft: #9cc4f01f;
+
+  /* ── Terminal ─────────────────────────────────────────── */
+  --terminal-bg: #0e1216;
+  --terminal-text: #d7dde6;
+  --terminal-muted: #8a94a3;
+
+  /* ── Elevation (floating layers only; cards never get shadows) ── */
+  --shadow-popover: 0 8px 24px #00000066, 0 0 0 1px #00000033;
+  --shadow-dialog: 0 24px 64px #0000008c, 0 0 0 1px #00000040;
+
+  /* ── Typography ───────────────────────────────────────── */
+  --font-ui: "Segoe UI", -apple-system, "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", Consolas, "SF Mono", monospace;
+
+  --fs-xs: 12px;               /* labels, time, badges — the minimum */
+  --fs-sm: 13px;               /* body, buttons, inputs (default) */
+  --fs-md: 15px;               /* card titles */
+  --fs-lg: 18px;               /* section titles */
+  --fs-xl: 22px;               /* page titles */
+
+  --fw-regular: 400;
+  --fw-strong: 600;
+
+  --lh-tight: 1.35;            /* titles, single-line controls */
+  --lh-body: 1.6;              /* running text */
+
+  /* ── Spacing (multiples of 4 only) ────────────────────── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* ── Radius (three levels; --r-round is for true circles only) ── */
+  --r-sm: 6px;                 /* buttons, inputs, badges */
+  --r-md: 8px;                 /* cards, panels, menus */
+  --r-lg: 12px;                /* dialogs, large panels */
+  --r-round: 50%;              /* status dots, spinners, switch thumb */
+
+  /* ── Control sizes ────────────────────────────────────── */
+  --control-sm: 28px;
+  --control-md: 32px;
+  --control-lg: 36px;
+  --icon-sm: 16px;
+  --icon-md: 18px;
+  --icon-lg: 24px;
+  --border: 1px;
+  --stroke-thin: 1.5px;        /* small spinners */
+  --stroke-bold: 2px;          /* spinners, tab indicator, inset focus */
+  --underline-offset: 3px;
+
+  /* ── Layout ───────────────────────────────────────────── */
+  --rail-width: 72px;
+  --topbar-height: 48px;
+  --content-max: 1200px;
+  --dialog-width: 440px;
+  --menu-width: 220px;
+  --tooltip-width: 240px;
+  --toast-width: 360px;
+  --readable-width: 640px;     /* max line length for running text */
+
+  /* ── Motion ───────────────────────────────────────────── */
+  --dur-fast: 120ms;
+  --dur-base: 150ms;
+  --dur-slow: 180ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-spin: 800ms;           /* spinner rotation */
+  --dur-pulse: 1400ms;         /* skeleton, connecting dot */
+  --dur-blink: 1000ms;         /* streaming caret */
+
+  /* ── Focus ────────────────────────────────────────────── */
+  --focus-ring: var(--stroke-bold) solid var(--accent);
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;  /* for items flush inside a scroll container */
+
+  /* ── Stacking ─────────────────────────────────────────── */
+  --z-base: 0;
+  --z-raised: 1;
+  --z-sticky: 10;
+  --z-menu: 100;
+  --z-overlay: 200;
+  --z-dialog: 210;
+  --z-toast: 300;
+  --z-tooltip: 400;
+
+  /* ── Opacity ──────────────────────────────────────────── */
+  --opacity-disabled: 0.45;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f3f5f7;
+  --sidebar-bg: #e9edf1;
+  --panel: #ffffff;
+  --surface-raised: #f0f4f7;
+  --surface-inset: #f7f9fb;
+  --hover: #e3eaf0;
+  --scrim: #1a2a3a52;
+
+  --line: #d4dce3;
+  --line-strong: #b8c7d2;
+
+  --text: #233441;
+  --muted: #5c6d7c;
+
+  --accent: #147d68;
+  --accent-hover: #0f6a58;
+  --accent-ink: #ffffff;
+  --accent-soft: #dceee8;
+  --accent-text: #0f6655;
+
+  --success: #276d45;
+  --success-soft: #dff0e5;
+  --warning: #8f5b00;
+  --warning-soft: #f6ecd6;
+  --danger: #b63341;
+  --danger-hover: #9e2a37;
+  --danger-ink: #ffffff;
+  --danger-soft: #f7e1e3;
+  --info: #2a63a1;
+  --info-soft: #e0ebf7;
+
+  --terminal-bg: #f8fafb;
+  --terminal-text: #233441;
+  --terminal-muted: #5c6d7c;
+
+  --shadow-popover: 0 8px 24px #1a2a3a24, 0 0 0 1px #1a2a3a14;
+  --shadow-dialog: 0 24px 64px #1a2a3a33, 0 0 0 1px #1a2a3a14;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+}

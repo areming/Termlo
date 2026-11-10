@@ -1,3 +1,4 @@
+const atomicFile=require('./atomic-file.cjs');
 const fs=require('node:fs'),path=require('node:path'),{randomUUID}=require('node:crypto');
 const {AccountSync}=require('./account-sync.cjs');
 function endpoint(value){
@@ -9,8 +10,8 @@ function endpoint(value){
 }
 class AccountClient{
  constructor(root,vault,workspaces){this.file=path.join(root,'account-sessions.json');this.syncFile=path.join(root,'account-sync.json');this.vault=vault;this.workspaces=workspaces;this.sync=new AccountSync(root,vault,workspaces);this.sessions=fs.existsSync(this.file)?JSON.parse(fs.readFileSync(this.file)):{};this.syncEntries=fs.existsSync(this.syncFile)?JSON.parse(fs.readFileSync(this.syncFile)):{};}
- save(){const temp=this.file+'.'+randomUUID()+'.tmp';fs.writeFileSync(temp,JSON.stringify(this.sessions),{mode:0o600});fs.renameSync(temp,this.file);}
- saveSync(){const temp=this.syncFile+'.'+randomUUID()+'.tmp';fs.writeFileSync(temp,JSON.stringify(this.syncEntries),{mode:0o600});fs.renameSync(temp,this.syncFile);}
+ save(){const temp=this.file+'.'+randomUUID()+'.tmp';fs.writeFileSync(temp,JSON.stringify(this.sessions),{mode:0o600});atomicFile.renameSync(temp,this.file);}
+ saveSync(){const temp=this.syncFile+'.'+randomUUID()+'.tmp';fs.writeFileSync(temp,JSON.stringify(this.syncEntries),{mode:0o600});atomicFile.renameSync(temp,this.syncFile);}
  async request(base,route,method='GET',body,token,maxBytes=65536){const encoded=body?JSON.stringify(body):undefined;if(encoded&&Buffer.byteLength(encoded)>12*1024*1024)throw new Error('账户服务请求内容超过 12 MB');const res=await fetch(base+route,{method,redirect:'error',signal:AbortSignal.timeout(30000),headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(encoded?{body:encoded}:{})});const chunks=[];let size=0;for await(const chunk of res.body||[]){size+=chunk.length;if(size>maxBytes)throw new Error('账户服务返回内容过大');chunks.push(Buffer.from(chunk));}let data;try{data=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new Error('账户服务返回格式无效');}if(!res.ok)throw Object.assign(new Error(typeof data.error==='string'?data.error.slice(0,200):'账户服务请求失败'),{status:res.status});return data;}
  syncStatus(id){const entry=this.syncEntries[id];return entry?{status:entry.status||'pending',revision:entry.revision||0,dirty:!!entry.dirty,lastSyncAt:entry.lastSyncAt||null,message:entry.message||''}:{status:'not-loaded',revision:0,dirty:false,lastSyncAt:null,message:''};}
  status(id){const entry=this.sessions[id],sync=this.syncStatus(id);return entry?{signedIn:entry.expiresAt>Date.now(),hasSession:true,expiresAt:entry.expiresAt,verifiedAt:entry.verifiedAt,sync}: {signedIn:false,hasSession:false,sync};}

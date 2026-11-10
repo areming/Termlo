@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Termlo 设计系统</title>
+  <link rel="stylesheet" href="./tokens.css">
+  <link rel="stylesheet" href="./base.css">
+  <style>
+    /* Gallery-only layout. Tokens only, like everything else. */
+    .g-page { display: grid; gap: var(--sp-8); }
+    .g-section { display: grid; gap: var(--sp-4); scroll-margin-top: var(--sp-6); }
+    .g-section > header { display: grid; gap: var(--sp-1); }
+    .g-section > header p { color: var(--muted); }
+    .g-sub { color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-strong); }
+    .g-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+    .g-stack { display: grid; gap: var(--sp-3); align-content: start; min-width: 0; }
+    .g-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--sp-8) * 9), 1fr)); gap: var(--sp-4); align-items: start; }
+    .g-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--sp-8) * 11), 1fr)); gap: var(--sp-4); align-items: start; }
+    .g-section > .page-header { margin-bottom: 0; }
+    .g-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--sp-8) * 8), 1fr)); gap: var(--sp-3); }
+    .g-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--sp-8) * 6), 1fr)); gap: var(--sp-2); }
+    .g-swatch { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-2); border: var(--border) solid var(--line); border-radius: var(--r-md); background: var(--panel); }
+    .g-chip { flex: none; width: var(--control-md); height: var(--control-md); border: var(--border) solid var(--line); border-radius: var(--r-sm); }
+    .g-swatch code { min-width: 0; overflow: hidden; padding: 0; background: none; font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
+    .g-type { display: grid; gap: var(--sp-2); }
+    .g-type > div { display: flex; align-items: baseline; gap: var(--sp-4); }
+    .g-type .text-muted { flex: none; width: calc(var(--sp-8) * 3); font-size: var(--fs-xs); }
+    .g-radius { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+    .g-radius > div { display: grid; place-items: center; width: calc(var(--sp-8) * 3); height: calc(var(--sp-8) * 2); border: var(--border) solid var(--line-strong); background: var(--surface-raised); color: var(--muted); font-size: var(--fs-xs); }
+    .g-host-footer { justify-content: space-between; }
+    .g-assistant { height: calc(var(--sp-8) * 19); }
+    .g-float { position: static; animation: none; transform: none; box-shadow: var(--shadow-popover); }
+    .g-dialog { position: static; display: block; margin: 0; }
+    .g-toasts { position: static; width: auto; }
+    .g-tooltip-demo { display: grid; justify-items: start; gap: var(--sp-2); }
+    .g-tooltip-demo .tooltip { position: static; }
+
+    /* Capture mode (screenshots): let the shell grow with its content. */
+    .is-capture { scrollbar-width: none; }
+    .is-capture body { height: auto; overflow: visible; }
+    .is-capture .app { height: auto; overflow: visible; }
+    .is-capture .content { overflow: visible; }
+    .is-capture .rail { position: sticky; top: 0; height: 100vh; }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <div class="app">
+    <nav class="rail" aria-label="主导航">
+      <div class="rail-brand"><img src="../../assets/termlo.svg" alt="Termlo" width="28" height="28"></div>
+      <div class="rail-nav">
+        <a class="rail-item" href="#hosts" aria-current="page"><span data-icon="host"></span>主机</a>
+        <a class="rail-item" href="#feedback"><span data-icon="terminal"></span>终端</a>
+        <a class="rail-item" href="#lists"><span data-icon="folder"></span>文件</a>
+        <a class="rail-item" href="#assistant"><span data-icon="assistant"></span>助手</a>
+      </div>
+      <div class="rail-bottom">
+        <a class="rail-item" href="#forms"><span data-icon="settings"></span>设置</a>
+      </div>
+    </nav>
+
+    <header class="topbar">
+      <ol class="breadcrumb">
+        <li>Termlo</li>
+        <li aria-current="page">设计系统</li>
+      </ol>
+      <button class="search-trigger" type="button" id="search-trigger" aria-keyshortcuts="Control+K">
+        <span data-icon="search" data-icon-size="sm"></span>
+        <span>搜索主机、文件或命令…</span>
+        <kbd class="kbd">Ctrl&nbsp;K</kbd>
+      </button>
+      <button class="btn btn-ghost btn-icon" type="button" id="theme-toggle" aria-label="切换到亮色主题" title="切换到亮色主题">
+        <span data-icon="sun"></span>
+      </button>
+    </header>
+
+    <main class="content" id="main" tabindex="-1">
+      <div class="page g-page">
+
+        <!-- ── Foundations ─────────────────────────────────── -->
+        <section class="g-section" id="foundations" aria-labelledby="foundations-title">
+          <header>
+            <h1 class="title-xl" id="foundations-title">设计系统</h1>
+            <p>所有颜色、字号、间距和圆角都来自令牌；切换主题只替换令牌。</p>
+          </header>
+
+          <h2 class="g-sub">颜色</h2>
+          <div class="g-swatches" id="swatches"></div>
+
+          <div class="g-cols">
+            <div class="g-stack">
+              <h2 class="g-sub">字号</h2>
+              <div class="g-type">
+                <div><span class="text-muted">22 页面标题</span><span class="title-xl">主机</span></div>
+                <div><span class="text-muted">18 区块标题</span><span class="title-lg">最近任务</span></div>
+                <div><span class="text-muted">15 卡片标题</span><span class="title-md">web-prod-01</span></div>
+                <div><span class="text-muted">13 正文</span><span>连接成功后会自动打开终端。</span></div>
+                <div><span class="text-muted">12 标签</span><span class="text-xs text-muted">3 分钟前</span></div>
+              </div>
+            </div>
+            <div class="g-stack">
+              <h2 class="g-sub">圆角</h2>
+              <div class="g-radius">
+                <div style="border-radius: var(--r-sm)">6 按钮</div>
+                <div style="border-radius: var(--r-md)">8 卡片</div>
+                <div style="border-radius: var(--r-lg)">12 对话框</div>
+              </div>
+            </div>
+          </div>
+
+          <h2 class="g-sub">图标</h2>
+          <div class="g-row" id="icon-grid"></div>
+        </section>
+
+        <!-- ── Buttons ─────────────────────────────────────── -->
+        <section class="g-section" id="buttons" aria-labelledby="buttons-title">
+          <header><h2 class="title-lg" id="buttons-title">按钮</h2><p>一个视图只放一个主按钮；危险按钮只出现在确认对话框里。</p></header>
+          <div class="g-row">
+            <button class="btn btn-primary" type="button"><span data-icon="plus"></span>添加主机</button>
+            <button class="btn" type="button">测试连接</button>
+            <button class="btn btn-ghost" type="button">取消</button>
+            <button class="btn btn-danger" type="button">删除主机</button>
+            <button class="btn" type="button" disabled>保存</button>
+          </div>
+          <div class="g-row">
+            <button class="btn btn-primary btn-lg" type="button">执行方案</button>
+            <button class="btn btn-sm" type="button"><span data-icon="refresh" data-icon-size="sm"></span>刷新</button>
+            <button class="btn btn-primary" type="button" disabled aria-busy="true">连接中…</button>
+            <button class="btn" type="button" disabled aria-busy="true">上传中…</button>
+          </div>
+          <div class="g-row">
+            <button class="btn btn-icon" type="button" aria-label="复制" title="复制"><span data-icon="copy"></span></button>
+            <button class="btn btn-icon btn-ghost" type="button" aria-label="更多操作" title="更多操作"><span data-icon="more"></span></button>
+            <button class="btn btn-icon btn-sm" type="button" aria-label="编辑" title="编辑"><span data-icon="edit" data-icon-size="sm"></span></button>
+            <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="关闭" title="关闭"><span data-icon="close" data-icon-size="sm"></span></button>
+          </div>
+        </section>
+
+        <!-- ── Forms ───────────────────────────────────────── -->
+        <section class="g-section" id="forms" aria-labelledby="forms-title">
+          <header><h2 class="title-lg" id="forms-title">表单</h2><p>标签在上，说明或错误在下，每个字段最多一句。</p></header>
+          <div class="g-cols">
+            <form class="card g-stack" autocomplete="off" onsubmit="return false">
+              <div class="field">
+                <label class="field-label" for="f-name">名称</label>
+                <input class="input" id="f-name" name="name" value="web-prod-01" spellcheck="false">
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label class="field-label" for="f-address">地址</label>
+                  <input class="input mono" id="f-address" name="address" placeholder="例如 10.0.1.12…" spellcheck="false">
+                </div>
+                <div class="field">
+                  <label class="field-label" for="f-port">端口</label>
+                  <input class="input mono num" id="f-port" name="port" inputmode="numeric" value="22">
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label" for="f-auth">认证方式</label>
+                <span class="select-wrap">
+                  <select class="select" id="f-auth" name="auth">
+                    <option>密码</option>
+                    <option>私钥</option>
+                    <option>SSH Agent</option>
+                  </select>
+                </span>
+              </div>
+              <div class="field">
+                <label class="field-label" for="f-password">密码</label>
+                <input class="input" id="f-password" name="password" type="password" value="admin" aria-invalid="true" aria-describedby="f-password-error" autocomplete="current-password">
+                <p class="field-error" id="f-password-error"><span data-icon="status-error" data-icon-size="sm"></span>密码错误，服务器拒绝登录。请检查后重试。</p>
+              </div>
+              <div class="field">
+                <label class="field-label" for="f-group">分组<span class="optional">可选</span></label>
+                <input class="input" id="f-group" name="group" placeholder="例如 生产环境…">
+                <p class="field-help">同一分组的主机会排在一起。</p>
+              </div>
+              <label class="check"><input type="checkbox" name="remember" checked>记住密码（保存在系统钥匙串）</label>
+              <div class="btn-group" style="justify-content: flex-end">
+                <button class="btn btn-ghost" type="button">取消</button>
+                <button class="btn btn-primary" type="submit">保存主机</button>
+              </div>
+            </form>
+
+            <div class="g-stack">
+              <div class="card">
+                <label class="setting">
+                  <span class="setting-text"><span>连接后打开终端</span><span class="text-xs text-muted">关闭后只在后台保持连接</span></span>
+                  <input class="switch" type="checkbox" role="switch" name="open-terminal" checked>
+                </label>
+                <label class="setting">
+                  <span class="setting-text"><span>执行前先让我确认</span><span class="text-xs text-muted">助手提交方案后等待你点击执行</span></span>
+                  <input class="switch" type="checkbox" role="switch" name="confirm-plan">
+                </label>
+                <label class="setting">
+                  <span class="setting-text"><span>同步到云端</span><span class="text-xs text-muted">2.0 暂不提供</span></span>
+                  <input class="switch" type="checkbox" role="switch" name="cloud-sync" disabled>
+                </label>
+              </div>
+              <div class="card g-stack">
+                <div class="field">
+                  <label class="field-label" for="f-note">备注</label>
+                  <textarea class="textarea" id="f-note" name="note" placeholder="例如 只跑静态站点，不要动数据库…"></textarea>
+                </div>
+                <fieldset class="g-row" style="border: 0; margin: 0; padding: 0">
+                  <legend class="field-label" style="margin-bottom: var(--sp-1)">终端字号</legend>
+                  <label class="check"><input type="radio" name="font" checked>13 px</label>
+                  <label class="check"><input type="radio" name="font">14 px</label>
+                  <label class="check"><input type="radio" name="font">15 px</label>
+                </fieldset>
+                <div class="input-group">
+                  <span data-icon="search"></span>
+                  <input class="input" type="search" name="filter" aria-label="筛选主机" placeholder="筛选主机…">
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Hosts: page header, cards ───────────────────── -->
+        <section class="g-section" id="hosts" aria-labelledby="hosts-title">
+          <div class="page-header">
+            <h2 class="page-title" id="hosts-title">主机<span class="count">3 台</span></h2>
+            <div class="segmented" role="radiogroup" aria-label="显示方式">
+              <button type="button" role="radio" aria-checked="true" aria-label="卡片" title="卡片"><span data-icon="view-grid" data-icon-size="sm"></span></button>
+              <button type="button" role="radio" aria-checked="false" aria-label="列表" title="列表"><span data-icon="view-list" data-icon-size="sm"></span></button>
+            </div>
+            <button class="btn btn-primary" type="button"><span data-icon="plus"></span>添加主机</button>
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="主机分组">
+            <button class="tab" type="button" role="tab" aria-selected="true">全部<span class="count">3</span></button>
+            <button class="tab" type="button" role="tab" aria-selected="false">生产<span class="count">2</span></button>
+            <button class="tab" type="button" role="tab" aria-selected="false">测试<span class="count">1</span></button>
+          </div>
+
+          <div class="g-cards">
+            <article class="card card-interactive">
+              <div class="card-header">
+                <span class="avatar avatar-accent"><span data-icon="host"></span></span>
+                <div class="g-stack" style="gap: 0; flex: 1">
+                  <h3 class="card-title truncate"><a class="card-link" href="#hosts">web-prod-01</a></h3>
+                  <p class="card-meta mono truncate">deploy@10.0.1.12</p>
+                </div>
+                <span class="status" data-state="connected"><span class="dot"></span>已连接</span>
+              </div>
+              <div class="card-footer g-host-footer">
+                <span class="badge">Ubuntu 22.04</span>
+                <div class="quick-actions">
+                  <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="打开终端" title="打开终端"><span data-icon="terminal" data-icon-size="sm"></span></button>
+                  <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="打开文件" title="打开文件"><span data-icon="folder" data-icon-size="sm"></span></button>
+                  <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="交给助手" title="交给助手"><span data-icon="assistant" data-icon-size="sm"></span></button>
+                </div>
+              </div>
+            </article>
+            <article class="card card-interactive" id="host-hovered">
+              <div class="card-header">
+                <span class="avatar"><span data-icon="host"></span></span>
+                <div class="g-stack" style="gap: 0; flex: 1">
+                  <h3 class="card-title truncate"><a class="card-link" href="#hosts">db-prod-primary-shanghai-02</a></h3>
+                  <p class="card-meta mono truncate">root@db.internal.example.com</p>
+                </div>
+                <span class="status" data-state="connecting"><span class="dot"></span>连接中…</span>
+              </div>
+              <div class="card-footer g-host-footer">
+                <span class="badge">Debian 12</span>
+                <div class="quick-actions">
+                  <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="打开终端" title="打开终端"><span data-icon="terminal" data-icon-size="sm"></span></button>
+                  <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="打开文件" title="打开文件"><span data-icon="folder" data-icon-size="sm"></span></button>
+                  <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="交给助手" title="交给助手"><span data-icon="assistant" data-icon-size="sm"></span></button>
+                </div>
+              </div>
+            </article>
+            <article class="card card-interactive">
+              <div class="card-header">
+                <span class="avatar"><span data-icon="host"></span></span>
+                <div class="g-stack" style="gap: 0; flex: 1">
+                  <h3 class="card-title truncate"><a class="card-link" href="#hosts">staging</a></h3>
+                  <p class="card-meta mono truncate">ubuntu@47.96.0.8:2222</p>
+                </div>
+                <span class="status" data-state="failed"><span class="dot"></span>失败</span>
+              </div>
+              <div class="card-footer g-host-footer">
+                <span class="badge">CentOS 7</span>
+                <div class="quick-actions">
+                  <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="打开终端" title="打开终端"><span data-icon="terminal" data-icon-size="sm"></span></button>
+                  <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="打开文件" title="打开文件"><span data-icon="folder" data-icon-size="sm"></span></button>
+                  <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="交给助手" title="交给助手"><span data-icon="assistant" data-icon-size="sm"></span></button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- ── Lists ───────────────────────────────────────── -->
+        <section class="g-section" id="lists" aria-labelledby="lists-title">
+          <header><h2 class="title-lg" id="lists-title">列表</h2><p>悬停或键盘聚焦时出现快捷操作。</p></header>
+          <div class="toolbar">
+            <ol class="breadcrumb" style="flex: 0 1 auto" aria-label="当前目录">
+              <li>根目录</li><li>etc</li><li aria-current="page">nginx</li>
+            </ol>
+            <span class="toolbar-spacer"></span>
+            <button class="btn btn-sm" type="button"><span data-icon="upload" data-icon-size="sm"></span>上传</button>
+            <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="刷新" title="刷新"><span data-icon="refresh" data-icon-size="sm"></span></button>
+          </div>
+          <ul class="list" aria-label="文件">
+            <li class="row">
+              <span data-icon="folder" class="text-muted"></span>
+              <div class="row-main"><span class="row-title">conf.d</span></div>
+              <span class="row-aside">今天 10:24</span>
+              <div class="quick-actions">
+                <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="重命名" title="重命名"><span data-icon="edit" data-icon-size="sm"></span></button>
+                <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="删除" title="删除"><span data-icon="trash" data-icon-size="sm"></span></button>
+              </div>
+            </li>
+            <li class="row" id="row-hovered">
+              <span data-icon="file" class="text-muted"></span>
+              <div class="row-main"><span class="row-title">nginx.conf</span><span class="row-meta">助手在本次任务中修改过，可撤销</span></div>
+              <span class="row-aside">2.4 KB</span>
+              <div class="quick-actions">
+                <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="下载" title="下载"><span data-icon="download" data-icon-size="sm"></span></button>
+                <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="重命名" title="重命名"><span data-icon="edit" data-icon-size="sm"></span></button>
+                <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="删除" title="删除"><span data-icon="trash" data-icon-size="sm"></span></button>
+              </div>
+            </li>
+            <li class="row" aria-selected="true">
+              <span data-icon="file" class="text-muted"></span>
+              <div class="row-main"><span class="row-title">mime.types</span></div>
+              <span class="row-aside">5.1 KB</span>
+              <div class="quick-actions">
+                <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="下载" title="下载"><span data-icon="download" data-icon-size="sm"></span></button>
+                <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="删除" title="删除"><span data-icon="trash" data-icon-size="sm"></span></button>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <!-- ── Status, tabs, segmented, kbd ────────────────── -->
+        <section class="g-section" id="status" aria-labelledby="status-title">
+          <header><h2 class="title-lg" id="status-title">状态与标签</h2><p>状态用“小圆点 + 一个词”，不用整条横幅。</p></header>
+          <div class="g-row">
+            <span class="status" data-state="connected"><span class="dot"></span>已连接</span>
+            <span class="status" data-state="connecting"><span class="dot"></span>连接中…</span>
+            <span class="status" data-state="disconnected"><span class="dot"></span>已断开</span>
+            <span class="status" data-state="failed"><span class="dot"></span>失败</span>
+          </div>
+          <div class="g-row">
+            <span class="badge">默认</span>
+            <span class="badge badge-accent">规划</span>
+            <span class="badge badge-success">已完成</span>
+            <span class="badge badge-warning">需要补充</span>
+            <span class="badge badge-danger">失败</span>
+            <span class="badge badge-info">只读</span>
+            <span class="badge badge-outline">生产</span>
+          </div>
+          <div class="g-row">
+            <div class="segmented" role="radiogroup" aria-label="助手模式">
+              <button type="button" role="radio" aria-checked="true">先规划</button>
+              <button type="button" role="radio" aria-checked="false">直接执行</button>
+            </div>
+            <div class="segmented segmented-sm" role="radiogroup" aria-label="时间范围">
+              <button type="button" role="radio" aria-checked="false">1 小时</button>
+              <button type="button" role="radio" aria-checked="true">24 小时</button>
+              <button type="button" role="radio" aria-checked="false">7 天</button>
+            </div>
+            <span class="text-muted">按 <kbd class="kbd">Ctrl</kbd> <kbd class="kbd">F</kbd> 在终端中搜索</span>
+          </div>
+          <div class="tabs" role="tablist" aria-label="终端会话">
+            <button class="tab" type="button" role="tab" aria-selected="true"><span class="status" data-state="connected"><span class="dot"></span></span>web-prod-01</button>
+            <button class="tab" type="button" role="tab" aria-selected="false"><span class="status" data-state="disconnected"><span class="dot"></span></span>staging</button>
+            <button class="tab" type="button" role="tab" aria-selected="false"><span data-icon="plus" data-icon-size="sm"></span>新建</button>
+          </div>
+        </section>
+
+        <!-- ── Floating layers ─────────────────────────────── -->
+        <section class="g-section" id="overlays" aria-labelledby="overlays-title">
+          <header><h2 class="title-lg" id="overlays-title">浮层</h2><p>只有浮层有阴影。破坏性动作统一走对话框，按钮写明具体动作。</p></header>
+          <div class="g-row">
+            <button class="btn" type="button" id="open-dialog">删除主机…</button>
+            <button class="btn" type="button" id="show-toast">保存主机</button>
+          </div>
+          <div class="g-cols">
+            <div class="g-stack">
+              <div class="g-tooltip-demo">
+                <button class="btn btn-icon" type="button" aria-label="新建终端" title="新建终端"><span data-icon="plus"></span></button>
+                <div class="tooltip" role="tooltip">新建终端<kbd class="kbd">Ctrl&nbsp;T</kbd></div>
+              </div>
+              <div class="menu g-float" role="menu" aria-label="主机操作">
+                <button class="menu-item" type="button" role="menuitem"><span data-icon="terminal"></span>打开终端<kbd class="kbd">Enter</kbd></button>
+                <button class="menu-item" type="button" role="menuitem"><span data-icon="folder"></span>打开文件</button>
+                <button class="menu-item" type="button" role="menuitem"><span data-icon="assistant"></span>交给助手</button>
+                <hr class="menu-sep">
+                <button class="menu-item" type="button" role="menuitem"><span data-icon="edit"></span>编辑主机</button>
+                <button class="menu-item" type="button" role="menuitem"><span data-icon="copy"></span>复制地址</button>
+                <hr class="menu-sep">
+                <button class="menu-item menu-item-danger" type="button" role="menuitem"><span data-icon="trash"></span>删除主机…</button>
+              </div>
+            </div>
+            <div class="g-stack">
+              <div class="dialog g-dialog" role="dialog" aria-modal="false" aria-labelledby="static-dialog-title">
+                <div class="dialog-header">
+                  <h3 class="dialog-title" id="static-dialog-title">删除主机 web-prod-01？</h3>
+                  <button class="btn btn-icon btn-ghost" type="button" aria-label="关闭" title="关闭"><span data-icon="close"></span></button>
+                </div>
+                <div class="dialog-body"><p>主机配置和保存的密码会从本机删除，服务器上的内容不受影响。</p></div>
+                <div class="dialog-footer">
+                  <button class="btn btn-ghost" type="button">取消</button>
+                  <button class="btn btn-danger" type="button">删除主机</button>
+                </div>
+              </div>
+              <div class="toast-region g-toasts">
+                <div class="toast" data-tone="success"><span data-icon="status-success"></span><span class="toast-text">已保存主机 web-prod-01</span></div>
+                <div class="toast"><span data-icon="trash"></span><span class="toast-text">已删除 nginx.conf.bak</span><button class="btn btn-sm btn-ghost" type="button">撤销</button></div>
+                <div class="toast" data-tone="danger"><span data-icon="status-error"></span><span class="toast-text">连接 staging 失败：端口 2222 无响应。请确认防火墙已放行。</span><button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="关闭" title="关闭"><span data-icon="close" data-icon-size="sm"></span></button></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Empty, loading, code ────────────────────────── -->
+        <section class="g-section" id="feedback" aria-labelledby="feedback-title">
+          <header><h2 class="title-lg" id="feedback-title">空状态、加载与代码</h2><p>空状态本身就是引导：给出一个能马上做的动作。</p></header>
+          <div class="g-cols">
+            <div class="card empty">
+              <span class="empty-icon"><span data-icon="host" data-icon-size="lg"></span></span>
+              <h3 class="empty-title">还没有主机</h3>
+              <p class="empty-text">添加一台服务器，就能打开终端、管理文件，或交给助手处理。</p>
+              <div class="btn-group">
+                <button class="btn btn-primary" type="button"><span data-icon="plus"></span>添加主机</button>
+                <button class="btn" type="button">导入 ~/.ssh/config</button>
+              </div>
+            </div>
+            <div class="card g-stack" aria-busy="true" aria-label="正在加载主机">
+              <div class="g-row" style="flex-wrap: nowrap"><span class="skeleton skeleton-block" style="width: var(--control-md)"></span><div class="g-stack" style="flex: 1; gap: var(--sp-2)"><span class="skeleton" style="width: 60%"></span><span class="skeleton" style="width: 40%"></span></div></div>
+              <div class="g-row" style="flex-wrap: nowrap"><span class="skeleton skeleton-block" style="width: var(--control-md)"></span><div class="g-stack" style="flex: 1; gap: var(--sp-2)"><span class="skeleton" style="width: 70%"></span><span class="skeleton" style="width: 30%"></span></div></div>
+              <div class="g-row" style="flex-wrap: nowrap"><span class="skeleton skeleton-block" style="width: var(--control-md)"></span><div class="g-stack" style="flex: 1; gap: var(--sp-2)"><span class="skeleton" style="width: 50%"></span><span class="skeleton" style="width: 45%"></span></div></div>
+            </div>
+          </div>
+          <div class="g-cols">
+            <pre class="code" translate="no"><code>server {
+    listen 80;
+    server_name example.com;
+    root /var/www/html;
+}</code></pre>
+            <pre class="terminal" translate="no"><span class="t-prompt">deploy@web-prod-01:~$</span> sudo nginx -t
+nginx: the configuration file /etc/nginx/nginx.conf syntax is <span class="t-ok">ok</span>
+nginx: configuration file /etc/nginx/nginx.conf test is <span class="t-ok">successful</span>
+<span class="t-prompt">deploy@web-prod-01:~$</span> systemctl is-active nginx
+<span class="t-err">failed</span></pre>
+          </div>
+          <p>在消息里引用命令时用行内代码，例如 <code>systemctl reload nginx</code>。</p>
+        </section>
+
+        <!-- ── Assistant ───────────────────────────────────── -->
+        <section class="g-section" id="assistant" aria-labelledby="assistant-title">
+          <header><h2 class="title-lg" id="assistant-title">助手</h2><p>只有方案、提问、恢复、结果这四种需要你决定的内容做成卡片，其余都是消息流里的一行。</p></header>
+
+          <div class="assistant g-assistant">
+            <div class="conversation">
+              <div class="stream" aria-live="polite">
+                <p class="msg msg-user">网站打不开了，帮我把 web-prod-01 上的 nginx 修好。</p>
+                <p class="msg-step" data-tone="success"><span data-icon="status-success"></span>已检查 nginx 状态：服务未运行</p>
+                <p class="msg-step" data-tone="success"><span data-icon="status-success"></span>已读取 /etc/nginx/nginx.conf</p>
+                <div class="msg msg-assistant"><p>配置第 42 行少了一个分号，导致 nginx 启动失败。我准备这样修：</p></div>
+
+                <article class="decision" data-kind="plan" aria-labelledby="plan-title">
+                  <header class="decision-header">
+                    <span data-icon="plan" data-icon-size="sm"></span>
+                    <span class="decision-kind">方案</span>
+                    <h3 class="decision-title" id="plan-title">修复 nginx 配置并重新启动</h3>
+                  </header>
+                  <div class="decision-body">
+                    <ol class="steps">
+                      <li><div>在第 42 行补上分号<div class="step-detail">修改前自动备份，可撤销</div></div></li>
+                      <li><div>检查配置能否通过<div class="step-detail"><code>nginx -t</code></div></div></li>
+                      <li><div>启动 nginx 并确认网站返回 200</div></li>
+                    </ol>
+                  </div>
+                  <footer class="decision-footer">
+                    <span class="hint">只改动 1 个文件</span>
+                    <button class="btn btn-ghost" type="button">修改方案</button>
+                    <button class="btn btn-primary" type="button">执行方案</button>
+                  </footer>
+                </article>
+
+                <p class="msg-step"><span class="spinner"></span>正在检查配置…</p>
+                <div class="msg msg-assistant"><p>配置检查通过，正在启动 nginx<span class="caret" aria-hidden="true"></span></p></div>
+              </div>
+
+              <form class="composer" onsubmit="return false">
+                <label class="visually-hidden" for="composer-input">给助手的消息</label>
+                <textarea id="composer-input" name="message" rows="2" placeholder="补充要求，例如 不要重启数据库…"></textarea>
+                <div class="composer-bar">
+                  <div class="segmented segmented-sm" role="radiogroup" aria-label="助手模式">
+                    <button type="button" role="radio" aria-checked="true">先规划</button>
+                    <button type="button" role="radio" aria-checked="false">直接执行</button>
+                  </div>
+                  <span class="badge badge-outline"><span data-icon="host" data-icon-size="sm"></span>web-prod-01</span>
+                  <span class="toolbar-spacer"></span>
+                  <button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="添加附件" title="添加附件"><span data-icon="attach" data-icon-size="sm"></span></button>
+                  <button class="btn btn-icon btn-sm" type="button" aria-label="停止" title="停止"><span data-icon="stop" data-icon-size="sm"></span></button>
+                </div>
+              </form>
+            </div>
+
+            <aside class="console" aria-label="执行台">
+              <div class="console-header">
+                <span class="console-title">执行台</span>
+                <span class="status" data-state="running"><span class="dot"></span>执行中</span>
+              </div>
+              <ul class="console-list">
+                <li>
+                  <details class="console-row" data-state="success">
+                    <summary><span class="row-state"><span data-icon="check" data-icon-size="sm"></span></span><span class="console-label">检查 nginx 状态</span><span class="console-meta">0.3 秒</span><span data-icon="chevron-right" data-icon-size="sm" class="chevron"></span></summary>
+                  </details>
+                </li>
+                <li>
+                  <details class="console-row" data-state="success" open>
+                    <summary><span class="row-state"><span data-icon="check" data-icon-size="sm"></span></span><span class="console-label">读取 nginx.conf</span><span class="console-meta">0.1 秒</span><span data-icon="chevron-right" data-icon-size="sm" class="chevron"></span></summary>
+                    <div class="console-detail">
+                      <div class="console-command"><span>$</span><code translate="no">cat /etc/nginx/nginx.conf</code><button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="复制命令" title="复制命令"><span data-icon="copy" data-icon-size="sm"></span></button></div>
+                      <pre class="terminal" translate="no"><span class="t-muted">41</span>    location / {
+<span class="t-muted">42</span>        try_files $uri $uri/ =404
+<span class="t-muted">43</span>    }</pre>
+                    </div>
+                  </details>
+                </li>
+                <li>
+                  <details class="console-row" data-state="success">
+                    <summary><span class="row-state"><span data-icon="check" data-icon-size="sm"></span></span><span class="console-label">修改 nginx.conf（可撤销）</span><span class="console-meta">0.2 秒</span><span data-icon="chevron-right" data-icon-size="sm" class="chevron"></span></summary>
+                  </details>
+                </li>
+                <li>
+                  <details class="console-row" data-state="failed">
+                    <summary><span class="row-state"><span data-icon="close" data-icon-size="sm"></span></span><span class="console-label">启动 nginx</span><span class="console-meta">1.8 秒</span><span data-icon="chevron-right" data-icon-size="sm" class="chevron"></span></summary>
+                  </details>
+                </li>
+                <li>
+                  <details class="console-row" data-state="running">
+                    <summary><span class="row-state"><span class="spinner"></span></span><span class="console-label">检查配置</span><span class="console-meta">运行 3 秒</span><span data-icon="chevron-right" data-icon-size="sm" class="chevron"></span></summary>
+                  </details>
+                </li>
+              </ul>
+            </aside>
+          </div>
+
+          <div class="g-pair">
+            <article class="decision" data-kind="question" aria-labelledby="question-title">
+              <header class="decision-header">
+                <span data-icon="question" data-icon-size="sm"></span>
+                <span class="decision-kind">提问</span>
+                <h3 class="decision-title" id="question-title">80 端口被 Apache 占用了，怎么处理？</h3>
+              </header>
+              <div class="decision-body">
+                <div class="choices" role="radiogroup" aria-labelledby="question-title">
+                  <label class="choice"><input type="radio" name="q1" checked><span class="choice-text"><span>停用 Apache，让 nginx 使用 80 端口</span><span class="choice-detail">Apache 上的站点会停止访问</span></span></label>
+                  <label class="choice"><input type="radio" name="q1"><span class="choice-text"><span>nginx 改用 8080 端口</span><span class="choice-detail">需要你自己更新防火墙和域名配置</span></span></label>
+                </div>
+              </div>
+              <footer class="decision-footer">
+                <button class="btn btn-ghost" type="button">跳过</button>
+                <button class="btn btn-primary" type="button">提交回答</button>
+              </footer>
+            </article>
+
+            <article class="decision" data-kind="recovery" aria-labelledby="recovery-title">
+              <header class="decision-header">
+                <span data-icon="status-warning" data-icon-size="sm"></span>
+                <span class="decision-kind">恢复</span>
+                <h3 class="decision-title" id="recovery-title">启动 nginx 失败，已停止执行</h3>
+              </header>
+              <div class="decision-body">
+                <p class="text-muted">本次任务修改了 1 个文件。你可以撤销改动回到执行前，或者让助手继续排查。</p>
+                <div class="deliverable"><span data-icon="file" data-icon-size="sm"></span><span class="mono" translate="no">/etc/nginx/nginx.conf</span><span class="badge">已备份</span></div>
+              </div>
+              <footer class="decision-footer">
+                <button class="btn btn-ghost" type="button">保持现状</button>
+                <button class="btn" type="button"><span data-icon="undo" data-icon-size="sm"></span>撤销改动</button>
+                <button class="btn btn-primary" type="button">继续排查</button>
+              </footer>
+            </article>
+
+            <article class="decision" data-kind="result" data-outcome="done" aria-labelledby="result-title">
+              <header class="decision-header">
+                <span data-icon="status-success" data-icon-size="sm"></span>
+                <span class="decision-kind">结果</span>
+                <h3 class="decision-title" id="result-title">nginx 已恢复运行</h3>
+                <span class="badge badge-success">已完成</span>
+              </header>
+              <div class="decision-body">
+                <p>补上了第 42 行缺少的分号，nginx 已启动，首页返回 200。</p>
+                <ul class="checks">
+                  <li><span data-icon="check"></span><span><code>nginx -t</code> 检查通过</span></li>
+                  <li><span data-icon="check"></span><span>nginx 服务正在运行</span></li>
+                  <li><span data-icon="check"></span><span>http://127.0.0.1 返回 200</span></li>
+                </ul>
+                <div class="deliverable"><span data-icon="file" data-icon-size="sm"></span><span class="mono" translate="no">/etc/nginx/nginx.conf</span><button class="btn btn-sm btn-ghost" type="button">查看改动</button></div>
+              </div>
+              <footer class="decision-footer">
+                <span class="hint">用时 42 秒，执行 6 条命令</span>
+                <button class="btn" type="button"><span data-icon="undo" data-icon-size="sm"></span>撤销改动</button>
+              </footer>
+            </article>
+
+            <article class="decision" data-kind="result" data-outcome="incomplete" aria-labelledby="result2-title">
+              <header class="decision-header">
+                <span data-icon="status-warning" data-icon-size="sm"></span>
+                <span class="decision-kind">结果</span>
+                <h3 class="decision-title" id="result2-title">无法确认网站已恢复</h3>
+                <span class="badge badge-warning">需要补充</span>
+              </header>
+              <div class="decision-body">
+                <p>nginx 已启动，但从服务器内部访问首页超时，可能是防火墙规则导致。</p>
+                <ul class="checks">
+                  <li><span data-icon="check"></span><span>nginx 服务正在运行</span></li>
+                  <li data-state="fail"><span data-icon="close"></span><span>http://127.0.0.1 请求超时</span></li>
+                </ul>
+              </div>
+              <footer class="decision-footer">
+                <span class="hint">继续对话即可让助手接着排查</span>
+                <button class="btn" type="button">继续排查</button>
+              </footer>
+            </article>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <dialog class="dialog" id="demo-dialog" aria-labelledby="demo-dialog-title">
+    <form method="dialog">
+      <div class="dialog-header">
+        <h2 class="dialog-title" id="demo-dialog-title">删除主机 web-prod-01？</h2>
+        <button class="btn btn-icon btn-ghost" value="cancel" aria-label="关闭" title="关闭"><span data-icon="close"></span></button>
+      </div>
+      <div class="dialog-body"><p>主机配置和保存的密码会从本机删除，服务器上的内容不受影响。</p></div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost" value="cancel" autofocus>取消</button>
+        <button class="btn btn-danger" value="delete">删除主机</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast-region" id="toasts" aria-live="polite"></div>
+
+  <script type="module">
+    import { icon, iconNames, hydrateIcons } from './icons.js';
+
+    const root = document.documentElement;
+    const params = new URLSearchParams(location.search);
+    if (params.get('theme') === 'light') root.dataset.theme = 'light';
+    if (params.has('capture')) root.classList.add('is-capture');
+
+    // Color swatches straight from the live tokens.
+    const swatchTokens = [
+      'bg', 'sidebar-bg', 'panel', 'surface-raised', 'surface-inset', 'hover',
+      'line', 'line-strong', 'text', 'muted', 'accent', 'accent-soft',
+      'success', 'warning', 'danger', 'info', 'terminal-bg',
+    ];
+    document.getElementById('swatches').innerHTML = swatchTokens
+      .map((name) => `<div class="g-swatch"><span class="g-chip" style="background: var(--${name})"></span><code>--${name}</code></div>`)
+      .join('');
+
+    document.getElementById('icon-grid').innerHTML = iconNames()
+      .map((name) => `<span class="avatar" title="${name}">${icon(name)}</span>`)
+      .join('');
+
+    hydrateIcons();
+
+    // Theme toggle.
+    const toggle = document.getElementById('theme-toggle');
+    function syncThemeButton() {
+      const light = root.dataset.theme === 'light';
+      const label = light ? '切换到暗色主题' : '切换到亮色主题';
+      toggle.innerHTML = icon(light ? 'moon' : 'sun');
+      toggle.setAttribute('aria-label', label);
+      toggle.title = label;
+    }
+    toggle.addEventListener('click', () => {
+      root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
+      syncThemeButton();
+    });
+    syncThemeButton();
+
+    // Rail: mark the active item.
+    for (const item of document.querySelectorAll('.rail-item')) {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.rail-item').forEach((el) => el.removeAttribute('aria-current'));
+        item.setAttribute('aria-current', 'page');
+      });
+    }
+
+    // Tabs and segmented controls: single selection, roving tabindex, arrow keys.
+    const GROUPS = [
+      { item: '[role="tab"]', state: 'aria-selected' },
+      { item: '.segmented > [role="radio"]', state: 'aria-checked' },
+    ];
+    function select(item, state, focus) {
+      const siblings = [...item.parentElement.children].filter((el) => el.getAttribute(state) !== null);
+      for (const el of siblings) {
+        el.setAttribute(state, String(el === item));
+        el.tabIndex = el === item ? 0 : -1;
+      }
+      if (focus) item.focus();
+    }
+    for (const { item, state } of GROUPS) {
+      document.querySelectorAll(item).forEach((el) => { el.tabIndex = el.getAttribute(state) === 'true' ? 0 : -1; });
+    }
+    document.addEventListener('click', (event) => {
+      for (const { item, state } of GROUPS) {
+        const hit = event.target.closest(item);
+        if (hit) select(hit, state, false);
+      }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      for (const { item, state } of GROUPS) {
+        const current = event.target.closest(item);
+        if (!current) continue;
+        const siblings = [...current.parentElement.children].filter((el) => el.matches(item));
+        const index = siblings.indexOf(current);
+        const next = {
+          ArrowLeft: siblings[(index - 1 + siblings.length) % siblings.length],
+          ArrowRight: siblings[(index + 1) % siblings.length],
+          Home: siblings[0],
+          End: siblings[siblings.length - 1],
+        }[event.key];
+        event.preventDefault();
+        select(next, state, true);
+      }
+    });
+
+    // Ctrl K focuses search.
+    const search = document.getElementById('search-trigger');
+    document.addEventListener('keydown', (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        search.focus();
+      }
+    });
+
+    // Dialog and toast demos.
+    const dialog = document.getElementById('demo-dialog');
+    document.getElementById('open-dialog').addEventListener('click', () => dialog.showModal());
+    dialog.addEventListener('close', () => {
+      if (dialog.returnValue === 'delete') showToast('已删除主机 web-prod-01', 'success', 'status-success');
+    });
+
+    const toasts = document.getElementById('toasts');
+    function showToast(text, tone, iconName) {
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.dataset.tone = tone;
+      toast.innerHTML = `${icon(iconName)}<span class="toast-text"></span>`;
+      toast.querySelector('.toast-text').textContent = text;
+      toasts.append(toast);
+      setTimeout(() => toast.remove(), 4000);
+    }
+    document.getElementById('show-toast').addEventListener('click', () => showToast('已保存主机 web-prod-01', 'success', 'status-success'));
+
+
+    root.dataset.ready = 'true';
+  </script>
+</body>
+</html>

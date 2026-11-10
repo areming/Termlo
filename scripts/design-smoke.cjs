@@ -14,7 +14,7 @@ async function main(){
     await page.locator('#reconnect').click();await page.locator('#app-prompt-dialog').waitFor({state:'visible'});await page.locator('#app-prompt-dialog [data-response="1"]').click();
     await page.waitForFunction(()=>document.querySelector('#terminal-metrics[data-status="live"]')?.textContent.includes('40%'),null,{timeout:15000});
     assert.equal((await page.evaluate(()=>window.termus.hostMetrics())).length,1);
-    assert.match(await page.locator('#terminal-metrics').textContent(),/38%/);assert.match(await page.locator('#terminal-metrics').textContent(),/30%/);assert.match(await page.locator('#terminal-metrics').textContent(),/64.0 KB/);
+    {const metrics=await page.locator('#terminal-metrics').textContent();assert.match(metrics,/3\.0 GiB \/ 8\.0 GiB/);assert.match(metrics,/30\.0 GiB \/ 100 GiB/);assert.match(metrics,/64\.0 KiB\/s/);}
     await page.screenshot({path:path.join(output,'design-terminal-light.png')});
     assert.equal(await page.locator('.terminal-pane:not(.hidden) .xterm-viewport').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(248, 250, 251)');
     await page.locator('[data-view="hosts"]').click();assert.match(await page.locator('.host-card .host-metrics').textContent(),/40%/);await page.screenshot({path:path.join(output,'design-hosts-light.png')});

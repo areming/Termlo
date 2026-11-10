@@ -1,3 +1,4 @@
+const atomicFile=require('./atomic-file.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -18,7 +19,7 @@ class AgentStorage {
   read(file, fallback) { const full = path.join(this.directory, file); return fs.existsSync(full) ? JSON.parse(fs.readFileSync(full, 'utf8')) : fallback; }
   write(file, data) {
     const full = path.join(file === 'settings.json' ? this.settingsDirectory : this.directory, file), temp = full + '.' + randomUUID() + '.tmp';
-    try { fs.writeFileSync(temp, JSON.stringify(data, null, 2), { mode: 0o600 }); fs.renameSync(temp, full); }
+    try { fs.writeFileSync(temp, JSON.stringify(data, null, 2), { mode: 0o600 }); atomicFile.renameSync(temp, full); }
     finally { if (fs.existsSync(temp)) fs.unlinkSync(temp); }
   }
   publicSettings() { const { encryptedKey, ...settings } = this.settings; return { ...settings, hasKey: !!encryptedKey }; }

@@ -146,7 +146,7 @@ class AgentRemote {
   }
   async cleanRecovery(records){for(const record of records){const r=record.recovery;if(!r||!this.recoveryId||r.directory!=='/tmp/termus-recovery-'+this.recoveryId)throw new Error('清理记录无效');await this.bounded(record.hostId,async()=>{const {sftp}=await this.file(record.hostId,r.directory);if(r.backup){if(posix.dirname(r.backup)!==r.directory)throw new Error('清理路径不属于本任务');await call(sftp,'unlink',r.backup).catch(e=>{if(e.code!==2)throw e;});}await call(sftp,'rmdir',r.directory).catch(e=>{if(e.code!==2&&e.code!==4)throw e;});});}return {cleaned:true};}
   async cleanStaging(record){
-    if(!this.recoveryId||!record||!this.routes.has(record.hostId)||!/^\/[^\x00-\x1f]*\/termus-[a-f0-9-]{36}$/.test(record.folder)||posix.dirname(record.path)!==record.folder||!/^payload(?:\.[a-zA-Z0-9]{1,10}){0,2}$/.test(posix.basename(record.path)))throw new Error('附件暂存记录无效');
+    if(!this.recoveryId||!record||!this.routes.has(record.hostId)||!/^(?:\/[^\x00-\x1f]*)?\/termus-[a-f0-9-]{36}$/.test(record.folder)||posix.dirname(record.path)!==record.folder||!/^payload(?:\.[a-zA-Z0-9]{1,10}){0,2}$/.test(posix.basename(record.path)))throw new Error('附件暂存记录无效');
     return this.bounded(record.hostId,async()=>{const {sftp}=await this.file(record.hostId,record.folder);
       let folder;try{folder=await call(sftp,'lstat',record.folder);}catch(e){if(e.code===2)return {cleaned:true};throw e;}
       if(!folder.isDirectory())throw new Error('暂存目录已变化，拒绝清理');

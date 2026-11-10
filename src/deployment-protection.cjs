@@ -1,3 +1,4 @@
+const atomicFile=require('./atomic-file.cjs');
 const fs=require('node:fs'),path=require('node:path');
 const {randomUUID}=require('node:crypto');
 const {identityKey}=require('./host-os.cjs');
@@ -5,7 +6,7 @@ const {AliyunProvider}=require('./cloud-aliyun.cjs');
 const sleep=(ms,signal)=>new Promise((resolve,reject)=>{if(signal?.aborted)return reject(new Error('已暂停'));const done=()=>{clearTimeout(timer);signal?.removeEventListener('abort',abort);resolve();},abort=()=>{clearTimeout(timer);signal.removeEventListener('abort',abort);reject(new Error('已暂停'));},timer=setTimeout(done,ms);signal?.addEventListener('abort',abort,{once:true});});
 class DeploymentProtection{
  constructor({directory,hosts,vault,notify=()=>{},providerFactory=options=>new AliyunProvider(options),wait=sleep}){this.file=path.join(directory,'deployment-protection.json');this.hosts=hosts;this.vault=vault;this.notify=notify;this.providerFactory=providerFactory;this.wait=wait;this.busy=false;this.data=fs.existsSync(this.file)?JSON.parse(fs.readFileSync(this.file,'utf8')):{version:1,bindings:{},dismissed:{},groups:[]};for(const group of this.data.groups)if(group.status==='restoring'){group.status='unknown';group.notice='恢复曾中断，需查询状态；不能自动重放磁盘恢复。';}this.save();}
- save(){fs.mkdirSync(path.dirname(this.file),{recursive:true});const temp=this.file+'.'+randomUUID()+'.tmp';try{fs.writeFileSync(temp,JSON.stringify(this.data,null,2),{mode:0o600});fs.renameSync(temp,this.file);}finally{if(fs.existsSync(temp))fs.unlinkSync(temp);}this.notify({type:'protection'});}
+ save(){fs.mkdirSync(path.dirname(this.file),{recursive:true});const temp=this.file+'.'+randomUUID()+'.tmp';try{fs.writeFileSync(temp,JSON.stringify(this.data,null,2),{mode:0o600});atomicFile.renameSync(temp,this.file);}finally{if(fs.existsSync(temp))fs.unlinkSync(temp);}this.notify({type:'protection'});}
  binding(id){const b=this.data.bindings[id];if(!b)return null;let host;try{host=this.hosts.get(id);}catch{return null;}if(host.cloudIdentity?.instanceId&&(host.cloudIdentity.instanceId!==b.instanceId||host.cloudIdentity.region!==b.region))return null;return b.identity===identityKey(host)?b:null;}
  public(){return {busy:this.busy,hosts:this.hosts.list().map(h=>{const b=this.binding(h.id);return {hostId:h.id,cloud:h.cloudIdentity||null,configured:!!b,binding:b?{provider:'aliyun',region:b.region,instanceId:b.instanceId,disks:b.disks,days:b.days,verifiedAt:b.verifiedAt,hasCredentials:true}:null,dismissed:this.data.dismissed[h.id]===identityKey(h)};}),groups:this.data.groups.map(g=>structuredClone(g))};}
  provider(b){let c;try{c=JSON.parse(this.vault.decryptString(Buffer.from(b.encryptedCredentials,'base64')));}catch{throw new Error('云凭据无法解密，请重新配置保护');}return this.providerFactory({region:b.region,credentials:c});}
