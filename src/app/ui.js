@@ -173,10 +173,10 @@ export function uid(prefix = 'x') {
   return prefix + '-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-// Popup menu anchored to a button. items: [{ label, icon, danger, run } | 'separator']
-// items: { label, icon, run, danger, hint } | 'separator'. Opens below the anchor element,
-// or at the pointer when the anchor is a { x, y, focus } point (right-click menus).
-export function menu(anchor, items) {
+// Popup menu. items: { label, icon, run, danger, hint, meta, checked } | 'separator'.
+// Opens below the anchor element, or at the pointer when the anchor is a { x, y, focus } point
+// (right-click menus). options.match: as wide as the anchor (used as a dropdown).
+export function menu(anchor, items, options = {}) {
   document.querySelector('.menu[data-popup]')?.remove();
   const element = document.createElement('div');
   element.className = 'menu';
@@ -184,8 +184,11 @@ export function menu(anchor, items) {
   element.setAttribute('role', 'menu');
   render(element, html`${items.map((item, i) => item === 'separator'
     ? html`<hr class="menu-sep">`
-    : html`<button class="menu-item ${item.danger ? 'menu-item-danger' : ''}" type="button" role="menuitem" data-index="${i}">${item.icon ? ico(item.icon, 'sm') : ''}<span class="menu-label">${item.label}</span>${item.hint ? html`<kbd class="menu-hint">${item.hint}</kbd>` : ''}</button>`)}`);
+    : html`<button class="menu-item ${item.danger ? 'menu-item-danger' : ''}" type="button" role="menuitem" data-index="${i}">${item.icon ? ico(item.icon, 'sm') : ''}<span class="menu-label">${item.label}${item.meta ? html`<span class="menu-meta mono">${item.meta}</span>` : ''}</span>${item.hint ? html`<kbd class="menu-hint">${item.hint}</kbd>` : ''}${item.checked ? html`<span class="menu-check">${ico('check', 'sm')}</span>` : ''}</button>`)}`);
+  element.popover = 'manual';   // top layer: shows above modal dialogs too
   document.body.append(element);
+  element.showPopover?.();
+  if (options.match && anchor instanceof Element) element.style.width = anchor.offsetWidth + 'px';
   const point = !(anchor instanceof Element);
   const box = point ? { left: anchor.x, right: anchor.x, top: anchor.y, bottom: anchor.y } : anchor.getBoundingClientRect();
   const width = element.offsetWidth, height = element.offsetHeight;
@@ -207,7 +210,7 @@ export function menu(anchor, items) {
     items[Number(button.dataset.index)].run();
   });
   setTimeout(() => { document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', key, true); });
-  element.querySelector('.menu-item')?.focus();
+  (element.querySelector('.menu-check')?.closest('.menu-item') || element.querySelector('.menu-item'))?.focus();
 }
 
 // Right-click menu at the pointer. focus: the element that gets focus back afterwards.

@@ -31,7 +31,7 @@ export function createFilesPage(element, app) {
           <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="goto" aria-label="前往路径" title="前往路径">${ico('arrow-right', 'sm')}</button>
           <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="mkdir" aria-label="新建文件夹" title="新建文件夹">${ico('folder-plus', 'sm')}</button>
           <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="refresh" aria-label="刷新" title="刷新">${ico('refresh', 'sm')}</button>
-          <button class="btn btn-sm" type="button" data-action="upload-folder">上传文件夹</button>
+          <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="upload-folder" aria-label="上传文件夹" title="上传文件夹">${ico('folder-upload', 'sm')}</button>
           <button class="btn btn-sm btn-primary" type="button" data-action="upload">${ico('upload', 'sm')}上传</button>
         </div>
         <div class="files-body" id="files-drop">
@@ -55,9 +55,8 @@ export function createFilesPage(element, app) {
                       <button class="btn btn-icon btn-sm btn-ghost btn-danger-ghost" type="button" data-action="delete" aria-label="删除 ${f.name}" title="删除">${ico('trash', 'sm')}</button>
                     </div>
                   </li>`)}
-                ${!files.length ? html`<li class="row"><span class="text-muted files-empty">空文件夹。把文件拖到这里即可上传。</span></li>` : ''}
-              </ul>
-              <p class="files-tip text-xs text-muted">右键文件或空白处可以管理文件；把文件拖到某个文件夹上，就会上传到那个文件夹。</p>`}
+                ${!files.length ? html`<li class="row"><span class="text-muted files-empty">空文件夹，把文件拖进来即可上传</span></li>` : ''}
+              </ul>`}
           <div class="drop-hint" hidden>${ico('upload', 'lg')}<span>松开上传到 <span class="mono" id="drop-target">${path}</span></span></div>
         </div>
         ${transfers.size ? html`
@@ -96,10 +95,10 @@ export function createFilesPage(element, app) {
           <span class="empty-icon">${ico('folder', 'lg')}</span>
           <h2 class="empty-title">浏览服务器文件</h2>
           ${hosts.length ? html`
-            <p class="empty-text">选择一台主机。可以把本机文件直接拖进来上传。</p>
+
             <ul class="list pick-list">${hosts.map(h => html`
               <li class="row"><button class="row-button" type="button" data-host="${h.id}">${ico('host', 'sm')}<span class="row-main"><span class="row-title">${h.name}</span><span class="row-meta mono">${h.username}@${h.address}</span></span>${ico('arrow-right', 'sm')}</button></li>`)}</ul>`
-          : html`<p class="empty-text">还没有主机，先添加一台。</p><button class="btn btn-primary" type="button" data-add>${ico('plus')}添加主机</button>`}
+          : html`<button class="btn btn-primary" type="button" data-add>${ico('plus')}添加主机</button>`}
         </div>
       </div>`);
   }
@@ -264,7 +263,7 @@ export function createFilesPage(element, app) {
         ...(file.directory ? [
           { label: '下载文件夹…', icon: 'download', run: () => download(file) },
           { label: '上传文件到这里…', icon: 'upload', run: () => upload(undefined, file.path) },
-          { label: '上传文件夹到这里…', icon: 'upload', run: () => uploadFolder(file.path) },
+          { label: '上传文件夹到这里…', icon: 'folder-upload', run: () => uploadFolder(file.path) },
           { label: '在这里新建文件夹…', icon: 'folder-plus', run: () => mkdir(file.path) },
         ] : []),
         'separator',
@@ -277,7 +276,7 @@ export function createFilesPage(element, app) {
     }
     contextMenu(event, [
       { label: '上传文件…', icon: 'upload', run: () => upload() },
-      { label: '上传文件夹…', icon: 'upload', run: () => uploadFolder() },
+      { label: '上传文件夹…', icon: 'folder-upload', run: () => uploadFolder() },
       { label: '新建文件夹…', icon: 'folder-plus', run: () => mkdir() },
       'separator',
       { label: '刷新', icon: 'refresh', run: () => list(current.path) },

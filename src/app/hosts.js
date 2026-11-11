@@ -43,20 +43,31 @@ export function createHostsPage(element, app) {
   function actions(host) {
     return html`
       <div class="host-actions" role="group" aria-label="${host.name} 的操作">
-        <button class="host-action" type="button" data-action="terminal" title="打开终端">${ico('terminal', 'sm')}<span>终端</span></button>
-        <button class="host-action" type="button" data-action="files" title="浏览文件">${ico('folder', 'sm')}<span>文件</span></button>
-        <button class="host-action" type="button" data-action="assistant" title="交给助手">${ico('assistant', 'sm')}<span>助手</span></button>
+        <button class="host-action" type="button" data-action="terminal" aria-label="打开 ${host.name} 的终端" title="终端">${ico('terminal', 'sm')}</button>
+        <button class="host-action" type="button" data-action="files" aria-label="浏览 ${host.name} 的文件" title="文件">${ico('folder', 'sm')}</button>
+        <button class="host-action" type="button" data-action="assistant" aria-label="把 ${host.name} 交给助手" title="助手">${ico('assistant', 'sm')}</button>
       </div>
       <div class="host-tools">
-        <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="edit" aria-label="编辑 ${host.name}" title="编辑（名称、地址、分组、跳板机）">${ico('edit', 'sm')}</button>
+        <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="edit" aria-label="编辑 ${host.name}" title="编辑">${ico('edit', 'sm')}</button>
         <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="copy" aria-label="复制 ${host.name} 的地址" title="复制地址">${ico('copy', 'sm')}</button>
         <button class="btn btn-icon btn-sm btn-ghost btn-danger-ghost" type="button" data-action="delete" aria-label="删除 ${host.name}" title="删除主机">${ico('trash', 'sm')}</button>
       </div>`;
   }
 
+  const targetOf = host => `${host.username}@${host.address}${host.port !== 22 ? ':' + host.port : ''}`;
+  function via(host) {
+    if (!host.jumpHostId) return '';
+    const name = app.hostLabel(host.jumpHostId);
+    return html`<span class="via-chip" title="通过 ${name} 跳转连接">${ico('jump', 'sm')}<span class="truncate">${name}</span></span>`;
+  }
+  // A small tile with the system's initial; lit when the host is online.
+  function glyph(host) {
+    const os = OS_LABEL(host);
+    return html`<span class="host-glyph" aria-hidden="true">${os ? os.trim()[0].toUpperCase() : ico('host', 'sm')}</span>`;
+  }
+
   function card(host, online) {
-    const target = `${host.username}@${host.address}${host.port !== 22 ? ':' + host.port : ''}`;
-    const jump = host.jumpHostId ? app.hostLabel(host.jumpHostId) : '';
+    const target = targetOf(host);
     const facts = specs(host);
     const telemetry = app.telemetry;
     return html`
@@ -65,15 +76,14 @@ export function createHostsPage(element, app) {
           <span class="host-pulse" aria-hidden="true"></span>
           <div class="host-card-main">
             <h3 class="host-card-title truncate"><a class="card-link" href="#terminal" data-action="terminal" title="打开终端">${host.name}</a></h3>
-            <p class="host-card-target truncate"><span class="mono" translate="no">${target}</span>${jump ? html`<span class="host-via" title="经由跳板机连接">经 ${jump}</span>` : ''}</p>
+            <p class="host-card-target"><span class="mono truncate" translate="no">${target}</span>${via(host)}</p>
           </div>
           ${OS_LABEL(host) ? html`<span class="host-os truncate" title="${OS_LABEL(host)}">${OS_LABEL(host).replace(/ LTS$/, '')}</span>` : ''}
         </header>
         ${online
           ? html`<div class="host-telemetry" data-telemetry="${host.id}" data-variant="card">${view('card', telemetry.get(host.id), telemetry.history(host.id))}</div>`
-          : html`<div class="host-idle">
+          : html`<div class="host-idle" title="打开终端或文件后显示实时状态">
               ${facts.length ? html`<span class="host-facts">${facts.map(f => html`<span>${f}</span>`)}</span>` : ''}
-              <span class="text-xs text-muted">打开终端或文件后，这里会显示实时状态</span>
             </div>`}
         <footer class="host-card-foot">
           ${actions(host)}
@@ -81,18 +91,31 @@ export function createHostsPage(element, app) {
       </article>`;
   }
 
-  function row(host, connected) {
+  function row(host, online) {
+    const facts = specs(host);
     return html`
-      <li class="row host-row" data-host="${host.id}">
-        <span class="status-dot-slot">${connected ? html`<span class="status" data-state="connected" title="已连接"><span class="dot"></span></span>` : ico('host', 'sm')}</span>
-        <div class="row-main">
-          <a class="row-title card-link" href="#terminal" data-action="terminal">${host.name}</a>
-          <span class="row-meta mono" translate="no">${host.username}@${host.address}${host.port !== 22 ? ':' + host.port : ''}</span>
+      <li class="host-line" data-host="${host.id}" data-online="${online}">
+        ${glyph(host)}
+        <div class="host-line-main">
+          <a class="host-line-name card-link truncate" href="#terminal" data-action="terminal" title="${OS_LABEL(host) || '打开终端'}">${host.name}</a>
+          <span class="host-line-target"><span class="mono truncate" translate="no">${targetOf(host)}</span>${via(host)}</span>
         </div>
-        <span class="row-aside">${OS_LABEL(host)}</span>
-        <span class="row-aside">${host.group || '未分组'}</span>
-        <div class="quick-actions host-row-actions">${actions(host)}</div>
+        ${online
+          ? html`<div class="host-line-signal" data-telemetry="${host.id}" data-variant="line">${view('line', app.telemetry.get(host.id), app.telemetry.history(host.id))}</div>`
+          : html`<div class="host-line-signal host-line-facts">${facts.map(f => html`<span>${f}</span>`)}</div>`}
+        <div class="host-line-actions">${actions(host)}</div>
       </li>`;
+  }
+
+  // With "全部" selected and several groups, the list is sectioned by group.
+  function listView(list, connected) {
+    const sections = group === '全部' ? groups(list) : [[null]];
+    if (sections.length < 2) return html`<ul class="host-lines">${list.map(h => row(h, connected.has(h.id)))}</ul>`;
+    return sections.map(([name, count]) => html`
+      <section class="host-section">
+        <h3 class="host-section-title">${name}<span class="count">${count}</span></h3>
+        <ul class="host-lines">${list.filter(h => (h.group || '未分组') === name).map(h => row(h, connected.has(h.id)))}</ul>
+      </section>`);
   }
 
   function draw() {
@@ -104,7 +127,7 @@ export function createHostsPage(element, app) {
           <div class="card empty empty-page">
             <span class="empty-icon">${ico('host', 'lg')}</span>
             <h2 class="empty-title">添加第一台服务器</h2>
-            <p class="empty-text">添加后就能打开终端、管理文件，或者把运维任务交给助手。</p>
+            <p class="empty-text">终端、文件和助手都从这里开始</p>
             <div class="btn-group">
               <button class="btn btn-primary" type="button" data-action="add">${ico('plus')}添加主机</button>
               <button class="btn" type="button" data-action="import">导入 ~/.ssh/config</button>
@@ -140,7 +163,7 @@ export function createHostsPage(element, app) {
             ${group !== '全部' && group !== '未分组' ? html`<button class="btn btn-sm btn-ghost" type="button" data-action="group-menu" title="重命名或解散分组“${group}”">${ico('more', 'sm')}管理分组</button>` : ''}
           </div>` : ''}
         ${!list.length ? html`<p class="text-muted empty-inline">没有匹配的主机。</p>`
-          : view === 'list' ? html`<ul class="list host-list">${list.map(h => row(h, connected.has(h.id)))}</ul>`
+          : view === 'list' ? html`<div class="host-list">${listView(list, connected)}</div>`
           : html`<div class="host-grid">${list.map(h => card(h, connected.has(h.id)))}</div>`}
       </div>`);
     const tabs = $('#host-groups', element);
@@ -153,7 +176,14 @@ export function createHostsPage(element, app) {
   async function edit(host, draftValues) {
     const { hosts } = store.get();
     const jumpCandidates = hosts.filter(h => h.id !== host?.id);
-    const groupNames = [...new Set(hosts.map(h => h.group).filter(Boolean))];
+    const groupNames = [...new Set(hosts.map(h => h.group).filter(g => g && g !== '未分组'))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    const currentGroup = (host?.group || draftValues?.group || '') === '未分组' ? '' : (draftValues?.group ?? host?.group ?? '');
+    const jumpLabel = id => {
+      const jump = hosts.find(h => h.id === id);
+      return jump
+        ? html`${ico('jump', 'sm')}<span class="picker-label">${jump.name}</span><span class="picker-meta mono truncate">${jump.address}</span>${ico('chevron-down', 'sm')}`
+        : html`${ico('arrow-right', 'sm')}<span class="picker-label">直接连接</span><span class="picker-meta"></span>${ico('chevron-down', 'sm')}`;
+    };
     const v = { ...(host || {}), ...(draftValues || {}) };
     const isKey = v.auth === 'key';
     const { value, data, form } = await dialog({
@@ -189,9 +219,9 @@ export function createHostsPage(element, app) {
           <input type="hidden" name="auth" value="${isKey ? 'key' : 'password'}">
         </div>
         <div class="field" data-for="password" ${isKey ? raw('hidden') : ''}>
-          <label class="field-label" for="h-password">密码<span class="optional">${host?.hasPassword ? '已保存，留空则不变' : '可选，留空则每次连接时询问'}</span></label>
-          <input class="input" id="h-password" name="password" type="password" autocomplete="new-password">
-          <label class="check"><input type="checkbox" name="rememberPassword" ${!host || host.hasPassword ? raw('checked') : ''}>记住密码（用系统加密保存在本机）</label>
+          <label class="field-label" for="h-password">密码${host?.hasPassword ? raw('<span class="optional">已保存</span>') : ''}</label>
+          <input class="input" id="h-password" name="password" type="password" autocomplete="new-password" placeholder="${host?.hasPassword ? '留空保持不变' : '留空则连接时再问'}">
+          <label class="check"><input type="checkbox" name="rememberPassword" ${!host || host.hasPassword ? raw('checked') : ''}><span title="用系统加密保存在本机，不会上传">记住密码</span></label>
         </div>
         <div class="field" data-for="key" ${isKey ? '' : raw('hidden')}>
           <label class="field-label" for="h-key">私钥文件</label>
@@ -201,21 +231,22 @@ export function createHostsPage(element, app) {
           </div>
         </div>
         <details class="disclosure" ${v.group || v.jumpHostId ? raw('open') : ''}>
-          <summary>更多选项</summary>
-          <div class="field-row">
-            <div class="field">
-              <label class="field-label" for="h-group">分组<span class="optional">可选</span></label>
-              <input class="input" id="h-group" name="group" list="h-groups" value="${v.group && v.group !== '未分组' ? v.group : ''}" placeholder="例如 生产环境…" autocomplete="off">
-              <datalist id="h-groups">${groupNames.map(g => html`<option value="${g}">`)}</datalist>
+          <summary>分组与跳板机</summary>
+          <div class="field">
+            <span class="field-label" id="h-group-label">分组</span>
+            <div class="chips" role="radiogroup" aria-labelledby="h-group-label" id="h-group">
+              <button class="chip" type="button" role="radio" data-group="" aria-checked="${!currentGroup}">不分组</button>
+              ${groupNames.map(g => html`<button class="chip" type="button" role="radio" data-group="${g}" aria-checked="${currentGroup === g}">${g}</button>`)}
+              <input class="chip chip-input" id="h-group-new" value="${currentGroup && !groupNames.includes(currentGroup) ? currentGroup : ''}" placeholder="+ 新分组" aria-label="新分组名称" maxlength="200" autocomplete="off">
             </div>
-            <div class="field">
-              <label class="field-label" for="h-jump">跳板机<span class="optional">可选</span></label>
-              <span class="select-wrap"><select class="select" id="h-jump" name="jumpHostId">
-                <option value="">直接连接</option>
-                ${jumpCandidates.map(h => html`<option value="${h.id}" ${v.jumpHostId === h.id ? raw('selected') : ''}>${h.name}</option>`)}
-              </select></span>
-            </div>
+            <input type="hidden" name="group" value="${currentGroup}">
           </div>
+          ${jumpCandidates.length ? html`
+            <div class="field">
+              <span class="field-label" id="h-jump-label">跳板机</span>
+              <button class="picker" type="button" id="h-jump" aria-labelledby="h-jump-label" aria-haspopup="menu">${jumpLabel(v.jumpHostId)}</button>
+              <input type="hidden" name="jumpHostId" value="${v.jumpHostId || ''}">
+            </div>` : ''}
         </details>`,
       actions: [{ label: '取消', value: 'cancel', tone: 'ghost' }, { label: host ? '保存' : '添加主机', value: 'ok', tone: 'primary' }],
       onOpen(dialogElement) {
@@ -227,6 +258,26 @@ export function createHostsPage(element, app) {
           $('#h-key', dialogElement).required = button.dataset.auth === 'key';
         });
         $('#h-key', dialogElement).required = isKey;
+        // Group: one click on a chip, or type a new name.
+        const groupInput = $('input[name="group"]', dialogElement);
+        const chips = $('#h-group', dialogElement);
+        const newGroup = $('#h-group-new', dialogElement);
+        selectable(chips, '[role="radio"]', 'aria-checked', chip => { groupInput.value = chip.dataset.group; newGroup.value = ''; });
+        newGroup.addEventListener('input', () => {
+          const name = newGroup.value.trim();
+          const match = [...chips.querySelectorAll('[role="radio"]')].find(c => c.dataset.group === name);
+          for (const c of chips.querySelectorAll('[role="radio"]')) c.setAttribute('aria-checked', String(c === match || (!name && !c.dataset.group)));
+          groupInput.value = name;
+        });
+        // Jump host: a dropdown that shows name and address.
+        const jumpButton = $('#h-jump', dialogElement);
+        const jumpInput = $('input[name="jumpHostId"]', dialogElement);
+        jumpButton?.addEventListener('click', () => menu(jumpButton, [
+          { label: '直接连接', icon: 'arrow-right', checked: !jumpInput.value, run: () => pick('') },
+          'separator',
+          ...jumpCandidates.map(h => ({ label: h.name, meta: h.address, icon: 'jump', checked: jumpInput.value === h.id, run: () => pick(h.id) })),
+        ], { match: true }));
+        function pick(id) { jumpInput.value = id; render(jumpButton, jumpLabel(id)); }
         $('[data-pick-key]', dialogElement).addEventListener('click', async () => {
           const file = await api.pickKey();
           if (file) $('#h-key', dialogElement).value = file;
@@ -242,7 +293,7 @@ export function createHostsPage(element, app) {
       username: data.username.trim(),
       auth: data.auth,
       keyPath: data.auth === 'key' ? data.keyPath.trim() : '',
-      group: data.group?.trim() || '',
+      group: (data.group || '').trim(),
       jumpHostId: data.jumpHostId || '',
       tags: host?.tags || '',
       ...(data.password ? { password: data.password, rememberPassword: !!data.rememberPassword } : {}),

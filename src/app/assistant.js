@@ -160,11 +160,19 @@ export function createAssistantPage(element, app) {
         <div class="card empty empty-page">
           <span class="empty-icon">${ico('assistant', 'lg')}</span>
           <h2 class="empty-title">先连接一个模型</h2>
-          <p class="empty-text">${state.settings.keyBroken ? '已保存的 API 密钥无法在这台电脑上解密，需要重新填写。' : '助手需要一个支持工具调用的模型（OpenAI 兼容接口）。密钥用系统加密保存在本机。'}</p>
+          <p class="empty-text">${state.settings.keyBroken ? '保存的密钥在这台电脑上解不开，请重新填写' : '任何支持工具调用的 OpenAI 兼容模型都可以'}</p>
           <button class="btn btn-primary" type="button" data-action="settings">${ico('settings')}设置模型</button>
         </div>
       </div>`;
   }
+
+  // Everyday jobs, one click to fill the box.
+  const SUGGESTIONS = [
+    ['activity', '检查服务器整体状况', '检查这台服务器的整体状况：CPU、内存、磁盘、负载和异常进程，给出结论'],
+    ['status-warning', '服务起不来', '有个 systemd 服务起不来，帮我找出原因并修好：'],
+    ['trash', '清理磁盘空间', '磁盘快满了，找出占用最大的目录，清理 7 天前的日志和缓存，删除前先告诉我'],
+    ['link', '端口被占用', '80 端口被占用了，找出是哪个进程，确认后再处理'],
+  ];
 
   function composeView() {
     composing ||= { hostIds: [], mode: 'plan', attachments: [] };
@@ -174,8 +182,7 @@ export function createAssistantPage(element, app) {
       ${header()}
       <div class="compose">
         <div class="compose-main">
-          <h2 class="title-lg">要在服务器上做什么？</h2>
-          <p class="text-muted">用一句话说清目标。助手会先检查现场，再动手；改过的文件可以撤销。</p>
+          <h2 class="compose-title"><span class="compose-mark" aria-hidden="true">${ico('assistant')}</span>要在服务器上做什么？</h2>
           <form class="composer composer-large" data-form="start">
             <label class="visually-hidden" for="assistant-input">任务目标</label>
             <textarea id="assistant-input" name="prompt" rows="4" placeholder="例如：用 Docker 部署 nginx，把 80 端口指向 /srv/site…" required></textarea>
@@ -191,7 +198,9 @@ export function createAssistantPage(element, app) {
               <button class="btn btn-primary btn-sm" type="submit" ${!hosts.length ? raw('disabled') : ''}>${ico('send', 'sm')}开始</button>
             </div>
           </form>
-          ${!hosts.length ? html`<p class="text-muted">还没有主机。<a href="#hosts" data-action="add-host">先添加一台</a>。</p>` : ''}
+          ${!hosts.length ? html`<p class="text-muted">还没有主机，<a href="#hosts" data-action="add-host">先添加一台</a></p>`
+            : html`<div class="suggestions" aria-label="常用任务">${SUGGESTIONS.map(([icon, label, text]) => html`
+                <button class="suggestion" type="button" data-suggest="${text}" title="${text}">${ico(icon, 'sm')}<span>${label}</span></button>`)}</div>`}
         </div>
         ${recent.length ? html`
           <div class="compose-recent">
@@ -535,6 +544,13 @@ export function createAssistantPage(element, app) {
     try { composing.attachments.push(...await api.agentAddAttachments(paths)); draw(); } catch (error) { fail(error); }
   });
   on(root, 'click', '[data-drop]', (_e, button) => { api.agentDropAttachment(button.dataset.drop).catch(() => {}); composing.attachments = composing.attachments.filter(a => a.id !== button.dataset.drop); draw(); });
+  on(root, 'click', '[data-suggest]', (_e, button) => {
+    const input = $('#assistant-input', root);
+    if (!input) return;
+    input.value = button.dataset.suggest;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  });
   on(root, 'click', '[data-copy]', (_e, button) => api.writeClipboard(button.dataset.copy).then(() => toast('已复制')).catch(fail));
   on(root, 'click', '[data-action]', async (event, button) => {
     const action = button.dataset.action;

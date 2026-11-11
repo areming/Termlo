@@ -100,10 +100,10 @@ export function createTerminalPage(element, app) {
         <span class="empty-icon">${ico('terminal', 'lg')}</span>
         <h2 class="empty-title">打开一个终端</h2>
         ${hosts.length ? html`
-          <p class="empty-text">选择要连接的主机。</p>
+
           <ul class="list pick-list">${hosts.slice().sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')).map(h => html`
             <li class="row"><button class="row-button" type="button" data-open="${h.id}">${ico('host', 'sm')}<span class="row-main"><span class="row-title">${h.name}</span><span class="row-meta mono">${h.username}@${h.address}</span></span>${ico('arrow-right', 'sm')}</button></li>`)}</ul>`
-        : html`<p class="empty-text">还没有主机，先添加一台。</p><button class="btn btn-primary" type="button" data-add>${ico('plus')}添加主机</button>`}
+        : html`<button class="btn btn-primary" type="button" data-add>${ico('plus')}添加主机</button>`}
       </div>`);
   }
 

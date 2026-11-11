@@ -121,6 +121,15 @@ export function view(variant, metrics, points) {
       </span>
       ${metrics.uptime ? html`<span class="tm-item tm-uptime" title="系统运行时长"><span class="tm-key">运行</span><span class="tm-val">${uptime(metrics.uptime)}</span></span>` : ''}`;
   }
+  if (variant === 'line') {
+    return html`
+      <span class="tm-item tm-cpu" data-level="${level(cpu)}" title="CPU 使用率，近 5 分钟走势">
+        ${sparkline(points.map(p => p.cpu), { width: 72, height: 20, kind: 'cpu', label: 'CPU 近 5 分钟', top: scaleTop(points.map(p => p.cpu)) })}
+        <span class="tm-val">${waiting ? '…' : percent(cpu)}</span>
+      </span>
+      <span class="tm-item" data-level="${level(mem)}" title="内存 ${metrics.memory ? bytes(metrics.memory.used) + ' / ' + bytes(metrics.memory.total) : ''}">${ring(mem, 'mem')}<span class="tm-val">${percent(mem)}</span></span>
+      <span class="tm-item" data-level="${level(disk)}" title="磁盘 ${metrics.disk ? bytes(metrics.disk.used) + ' / ' + bytes(metrics.disk.total) : ''}">${ring(disk, 'disk')}<span class="tm-val">${percent(disk)}</span></span>`;
+  }
   // card
   const cpuPoints = points.map(p => p.cpu);
   const top = scaleTop(cpuPoints);

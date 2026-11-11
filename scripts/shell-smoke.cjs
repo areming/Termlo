@@ -74,7 +74,7 @@ async function main() {
       await page.getByLabel('地址').fill('127.0.0.1');
       await page.getByLabel('端口').fill(String(fixture.port));
       await page.getByLabel('用户名').fill('tester');
-      await page.getByLabel('名称').fill('fixture-web');
+      await page.locator('#h-name').fill('fixture-web');
       await page.locator('#h-password').fill('local-test');
       await shot('dark-host-form');
       await page.getByRole('button', { name: '添加主机', exact: true }).last().click();
@@ -189,7 +189,7 @@ async function main() {
     await step('host list view and groups', async () => {
       await page.locator('.rail-item[data-page="hosts"]').click();
       await page.getByRole('radio', { name: '列表' }).click();
-      const row = page.locator('.host-row').first();
+      const row = page.locator('.host-line').first();
       await row.waitFor();
       // Row buttons and the page around the list must not open the terminal.
       await page.locator('.page-title').click();

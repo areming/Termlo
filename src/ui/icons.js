@@ -64,6 +64,12 @@ const SHAPES = {
   'folder-plus':
     '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
     '<path d="M12 10.5v5M9.5 13h5"/>',
+  'folder-upload':
+    '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
+    '<path d="M12 16v-5.5M9.5 13l2.5-2.5 2.5 2.5"/>',
+  jump:
+    '<circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/>' +
+    '<path d="M7 18h2.5a3.5 3.5 0 0 0 3.5-3.5v-5A3.5 3.5 0 0 1 16.5 6H17"/>',
   play: '<path d="M7 5v14l11-7z"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
