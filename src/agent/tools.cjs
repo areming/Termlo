@@ -31,7 +31,7 @@ const TOOLS = {
     { hostId, path: text('绝对路径', 4096) }),
   write_file: define('write_file',
     '写入文本文件（最多 64 KB）。必须先用 read_file 读取同一路径并传入它返回的 sha256；新文件传 missing。原文件自动备份，任务失败时可撤销。',
-    { hostId, path: text('绝对路径', 4096), content: { type: 'string', description: '完整文件内容', maxLength: 65536 }, sha256: text('read_file 返回的 sha256，新文件为 missing', 64) }),
+    { hostId, path: text('绝对路径', 4096), content: { type: 'string', description: '完整文件内容（原样写入，注意保留末尾换行）', maxLength: 65536 }, sha256: text('read_file 返回的 sha256，新文件为 missing', 64) }),
   upload: define('upload',
     '把任务附件原样上传到主机的独立暂存目录（权限 700/600，校验 sha256），返回远端路径。附件内容不会提供给你。',
     { hostId, attachmentId: text('附件 ID', 200), directory: text('已存在的绝对父目录，例如 /tmp', 3500) }),

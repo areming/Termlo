@@ -623,6 +623,7 @@ class AgentService {
       case 'read_file': {
         const file = await remote.readFile(args.hostId, args.path);
         run.reads.set(args.hostId + '\0' + args.path, file.sha256);
+        if (!file.truncated) (run.endings ||= new Map()).set(args.hostId + '\0' + args.path, file.content.endsWith('\n'));
         this.observe(run, args.hostId);
         return { path: file.path, size: file.size, modifiedAt: file.modifiedAt, sha256: file.sha256, truncated: file.truncated, content: file.content };
       }
@@ -632,8 +633,12 @@ class AgentService {
         try {
           const record = await remote.writeFile(args.hostId, args.path, args.content, args.sha256);
           this.settleOperation(task, op, 'done');
-          run.reads.set(args.hostId + '\0' + args.path, record.sha256);
-          return { path: args.path, sha256: record.sha256, bytes: record.bytes, backedUp: !!record.backup };
+          const key = args.hostId + '\0' + args.path;
+          run.reads.set(key, record.sha256);
+          // Written exactly as given; point out a dropped final newline so it can be fixed in one step.
+          const notice = run.endings?.get(key) && !args.content.endsWith('\n') ? '原文件以换行结尾，新内容没有。如果不是有意的，请补上末尾换行再写一次。' : undefined;
+          run.endings?.set(key, args.content.endsWith('\n'));
+          return { path: args.path, sha256: record.sha256, bytes: record.bytes, backedUp: !!record.backup, ...(notice ? { notice } : {}) };
         } catch (error) {
           this.settleOperation(task, op, /超时|中断|abort/i.test(error.message) || controller.signal.aborted ? 'unknown' : 'done');
           throw error;
@@ -672,6 +677,7 @@ class AgentService {
         task.proposal = { ...args, revision: task.planRevision, hostIds: [...task.hostIds], at: now() };
         task.status = 'plan_ready';
         this.event(task, 'proposal', args.summary, { proposal: structuredClone(task.proposal) });
+        task.interaction = null;   // a new revision replaces questions from the previous one
         if (args.questions.length) {
           task.interaction = questions.createRequest(args.questions.map((question, i) => ({ header: `待明确 ${i + 1}`, question, options: [] })));
           this.event(task, 'question', '完善方案', { request: structuredClone(task.interaction) });

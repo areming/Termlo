@@ -49,6 +49,33 @@ const SCENARIOS = {
     check: 'curl -s --max-time 5 http://127.0.0.1:18081/ | grep -q "Termlo repaired" && echo BENCH_PASS',
     cleanup: 'docker rm -f termlo-bench-broken >/dev/null 2>&1; rm -rf /srv/termlo-bench; true',
   },
+  // Plan mode end to end: a plan is proposed, approved as-is, then executed.
+  S4: {
+    title: '先规划再执行：修改应用配置',
+    mode: 'plan',
+    prompt: '把 /srv/termlo-bench/s4/app.env 里的 PORT 改成 9090，其他行保持不变。先给方案。',
+    setup: 'rm -rf /srv/termlo-bench/s4 && mkdir -p /srv/termlo-bench/s4 && printf "NAME=demo\\nPORT=8080\\nDEBUG=false\\n" > /srv/termlo-bench/s4/app.env',
+    check: 'grep -qx "PORT=9090" /srv/termlo-bench/s4/app.env && grep -qx "NAME=demo" /srv/termlo-bench/s4/app.env && grep -qx "DEBUG=false" /srv/termlo-bench/s4/app.env && echo BENCH_PASS',
+    cleanup: 'rm -rf /srv/termlo-bench; true',
+  },
+  // Undo: the task is stopped right after its first file change, then the user undoes it.
+  S5: {
+    title: '中途停止后撤销文件改动',
+    interrupt: 'undo',
+    prompt: '用修改文件的方式，把 /srv/termlo-bench/s5/site.conf 里的 server_name 改成 new.example.com。',
+    setup: 'rm -rf /tmp/termus-recovery-* /srv/termlo-bench/s5 && mkdir -p /srv/termlo-bench/s5 && printf "server {\\n  server_name old.example.com;\\n}\\n" > /srv/termlo-bench/s5/site.conf && sha256sum /srv/termlo-bench/s5/site.conf > /tmp/termlo-bench-s5.sha',
+    check: 'sha256sum -c --quiet /tmp/termlo-bench-s5.sha && ! ls -d /tmp/termus-recovery-* >/dev/null 2>&1 && echo BENCH_PASS',
+    cleanup: 'rm -rf /srv/termlo-bench /tmp/termlo-bench-s5.sha; true',
+  },
+  // Clean and delete: the change stays, the undo backup on the server is removed.
+  S6: {
+    title: '中途停止后清理并删除任务',
+    interrupt: 'clean',
+    prompt: '用修改文件的方式，把 /srv/termlo-bench/s6/site.conf 里的 server_name 改成 new.example.com。',
+    setup: 'rm -rf /tmp/termus-recovery-* /srv/termlo-bench/s6 && mkdir -p /srv/termlo-bench/s6 && printf "server {\\n  server_name old.example.com;\\n}\\n" > /srv/termlo-bench/s6/site.conf',
+    check: 'grep -q "server_name new.example.com;" /srv/termlo-bench/s6/site.conf && ! ls -d /tmp/termus-recovery-* >/dev/null 2>&1 && echo BENCH_PASS',
+    cleanup: 'rm -rf /srv/termlo-bench; true',
+  },
 };
 
 function loadEnv(file) {
@@ -110,7 +137,17 @@ async function runScenario(id) {
   const vault = { isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s), decryptString: b => b.toString() };
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'termlo-bench-'));
   const calls = [];
-  const agent = new AgentService({ directory, vault, hosts, verify: async () => true, complete: createModel(calls) });
+  // Interrupt scenarios stop the run as soon as the first file change is on the server.
+  let interrupted = false;
+  const notify = event => {
+    if (!scenario.interrupt || interrupted || event.type !== 'agent' || !agent.active) return;
+    const current = agent.active.task;
+    if (current.fileChanges?.some(r => r.state === 'applied' && r.recovery)) {
+      interrupted = true;
+      setImmediate(() => agent.pause(current.id));
+    }
+  };
+  const agent = new AgentService({ directory, vault, hosts, verify: async () => true, complete: createModel(calls), notify });
   agent.configure({ baseUrl: env.TERMLO_BENCH_BASE_URL, model: env.TERMLO_BENCH_MODEL, apiKey: env.TERMLO_BENCH_API_KEY, maxRounds: MAX_ROUNDS });
 
   console.log(`\n▶ ${id} ${scenario.title}`);
@@ -119,12 +156,40 @@ async function runScenario(id) {
 
   const started = Date.now();
   let task;
+  let followUp = '';
   try {
-    task = await agent.start({ prompt: scenario.prompt, hostIds: [HOST_ID], mode: 'execute' });
-    const timer = setTimeout(() => agent.pause(task.id), TASK_TIMEOUT_MS);
+    task = await agent.start({ prompt: scenario.prompt, hostIds: [HOST_ID], mode: scenario.mode || 'execute' });
+    const timer = setTimeout(() => agent.active && agent.pause(agent.active.task.id), TASK_TIMEOUT_MS);
     await agent.active?.done;
+    // Plan mode: answer questions like a user who accepts the suggestions, then approve the plan as proposed.
+    for (let i = 0; scenario.mode === 'plan' && i < 4; i++) {
+      task = agent.task(task.id);
+      if (task.interaction?.status === 'pending') {
+        agent.answer({ id: task.id, requestId: task.interaction.id, answers: task.interaction.questions.map(q => q.options.length
+          ? { questionId: q.id, optionIndex: q.recommendedOption ?? 0 }
+          : { questionId: q.id, text: '按你的建议处理。' }) });
+      } else if (task.status === 'plan_ready' && task.proposal) {
+        followUp = `方案 v${task.proposal.revision}：${task.proposal.steps.length} 步`;
+        agent.executePlan({ id: task.id, revision: task.proposal.revision });
+      } else break;
+      await agent.active?.done;
+    }
     clearTimeout(timer);
+    task = agent.task(task.id);
+    if (scenario.interrupt) {
+      if (!interrupted) followUp = '没有改过文件就结束了，未能测试中断';
+      else if (scenario.interrupt === 'undo') {
+        const result = await agent.recover({ id: task.id, action: 'undo' });
+        followUp = `撤销 ${result.restored} 项，失败 ${result.failed} 项`;
+        task = agent.task(task.id);
+      } else {
+        const recoverable = agent.state().tasks.find(t => t.id === task.id)?.recoverable || 0;
+        const result = await agent.remove(task.id, { clean: true });
+        followUp = `待清理 ${recoverable} 项，已清理 ${result.cleaned} 项，任务${agent.store.tasks.some(t => t.id === task.id) ? '仍在' : '已删除'}`;
+      }
+    }
   } catch (error) {
+    followUp = [followUp, '出错：' + error.message].filter(Boolean).join('；');
     task ||= { status: 'error', notice: error.message, events: [], rounds: 0, tokens: 0 };
   }
   const duration = Date.now() - started;
@@ -137,7 +202,8 @@ async function runScenario(id) {
   const result = {
     id,
     title: scenario.title,
-    passed: check.output.includes('BENCH_PASS'),
+    passed: check.output.includes('BENCH_PASS') && (!scenario.interrupt || interrupted),
+    followUp,
     status: task.status,
     notice: task.notice || '',
     rounds: task.rounds,
@@ -165,7 +231,7 @@ async function runScenario(id) {
       report: event.report ? { headline: event.report.headline, outcome: event.report.outcome, checks: event.report.checks?.map(c => ({ label: c.label, status: c.status, evidenceIds: c.evidenceIds?.length })) } : undefined,
     })),
   };
-  console.log(`  ${result.passed ? '✅ 通过' : '❌ 未通过'} · 状态 ${result.status} · ${result.rounds} 轮 · ${result.tokens} tokens · ${result.durationSec}s${result.notice ? ' · ' + result.notice.slice(0, 120) : ''}`);
+  console.log(`  ${result.passed ? '✅ 通过' : '❌ 未通过'} · 状态 ${result.status} · ${result.rounds} 轮 · ${result.tokens} tokens · ${result.durationSec}s${result.notice ? ' · ' + result.notice.slice(0, 120) : ''}${result.followUp ? '\n    ↳ ' + result.followUp : ''}`);
   return result;
 }
 

@@ -472,3 +472,35 @@ test('undo removes the server backup once the original is restored', async t => 
   assert.deepEqual(await agent.recover({ id: second.id, action: 'undo' }), { restored: 1, failed: 0 });
   assert.match(agent.task(second.id).notice, /1 份备份没能从服务器删除/);
 });
+
+test('a revised plan without questions clears the previous questions and can be executed', async t => {
+  const plan = questions => reply([call('plan', { title: '方案', summary: '一句话', steps: ['做事'], checks: ['验证'], risks: [], questions })]);
+  const { agent } = setup(t, { script: round => round === 0 ? plan(['要不要重启？']) : plan([]) });
+  await runTask(agent, { prompt: '规划', mode: 'plan' });
+  let task = agent.task(agent.store.tasks[0].id);
+  assert.equal(task.interaction.status, 'pending');
+  agent.answer({ id: task.id, requestId: task.interaction.id, answers: [{ questionId: task.interaction.questions[0].id, text: '不用' }] });
+  await agent.active?.done;
+  task = agent.task(task.id);
+  assert.equal(task.status, 'plan_ready');
+  assert.equal(task.proposal.revision, 2);
+  assert.equal(task.interaction, null);
+});
+
+test('write_file points out a dropped final newline', async t => {
+  const remote = fakeRemote({ files: { '/etc/app.env': 'PORT=8080\n' } });
+  const { agent } = setup(t, {
+    remote,
+    script: round => [
+      reply([call('read_file', { hostId: 'h1', path: '/etc/app.env' })]),
+      reply([call('write_file', { hostId: 'h1', path: '/etc/app.env', content: 'PORT=9090', sha256: sha('PORT=8080\n') })]),
+      reply([call('write_file', { hostId: 'h1', path: '/etc/app.env', content: 'PORT=9090\n', sha256: sha('PORT=9090') })]),
+      reply([call('finish', { outcome: 'completed', headline: '改好了', summary: '完成', checks: [{ label: '写入', status: 'passed' }] })]),
+    ][round],
+  });
+  const task = await runTask(agent, { prompt: '改端口' });
+  const results = toolResults(task);
+  assert.match(results[1].notice, /末尾换行/);
+  assert.equal(results[2].notice, undefined);
+  assert.equal(remote.files.get('/etc/app.env'), 'PORT=9090\n');
+});
