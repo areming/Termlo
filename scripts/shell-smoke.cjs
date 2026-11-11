@@ -152,12 +152,11 @@ async function main() {
       await page.locator('.rail-item[data-page="assistant"]').click();
       await page.getByRole('heading', { name: '要在服务器上做什么？' }).waitFor();
       await page.getByLabel('任务目标').fill('重新加载 nginx 配置');
-      await page.getByRole('radio', { name: '直接执行' }).click();
       await page.getByRole('button', { name: '选择主机' }).click();
       await page.getByRole('checkbox', { name: /fixture-web/ }).check();
       await page.getByRole('button', { name: '确定' }).click();
       await shot('dark-assistant-compose');
-      await page.getByRole('button', { name: '开始' }).click();
+      await page.getByRole('button', { name: '发送' }).click();
       await page.locator('.decision[data-kind="result"]').waitFor({ timeout: 30000 });
       assert.ok(commands.includes('systemctl reload nginx'));
       assert.equal(await page.locator('.msg-assistant .md-table td').count(), 2);
@@ -166,15 +165,14 @@ async function main() {
       await shot('dark-assistant-result');
     });
 
-    await step('task manager lists and deletes tasks', async () => {
-      await page.locator('[data-action="tasks"]').click();
-      await page.getByRole('menuitem', { name: /全部任务/ }).click();
-      await page.getByLabel('筛选任务').fill('nginx');
-      await page.locator('#task-list [data-open-task]').first().waitFor();
-      await shot('dark-task-manager');
-      await page.locator('#task-list .row').first().hover();
-      await page.locator('#task-list [data-remove-task]').first().click();
-      await page.getByRole('button', { name: '删除任务' }).click();
+    await step('conversation list groups by host and deletes', async () => {
+      const session = page.locator('.sessions .session').first();
+      await session.waitFor();
+      assert.match(await page.locator('.sessions').innerText(), /fixture-web/);
+      await shot('dark-sessions');
+      await session.click({ button: 'right' });
+      await page.getByRole('menuitem', { name: /删除对话/ }).click();
+      await page.getByRole('button', { name: '删除对话' }).click();
       await page.getByRole('heading', { name: '要在服务器上做什么？' }).waitFor();
       assert.equal(await page.evaluate(async () => (await window.termlo.agentState()).tasks.length), 0);
     });

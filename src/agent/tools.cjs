@@ -60,6 +60,9 @@ const TOOLS = {
 };
 
 const MODE_TOOLS = {
+  // 2.2: one conversation. Look freely, act when it's clear, plan when it's not.
+  auto: ['run', 'wait', 'cancel', 'inspect', 'read_file', 'write_file', 'upload', 'web', 'ask', 'plan', 'finish'],
+  // Tasks created before 2.2 keep their mode.
   execute: ['run', 'wait', 'cancel', 'inspect', 'read_file', 'write_file', 'upload', 'web', 'ask', 'finish'],
   plan: ['inspect', 'read_file', 'web', 'ask', 'plan'],
 };

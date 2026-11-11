@@ -60,10 +60,22 @@ export function createHostsPage(element, app) {
     return html`<button class="live-off" type="button" data-action="disconnect" aria-label="${label}（${host.name}）" title="${label}">${ico('power', 'sm')}</button>`;
   }
   const targetOf = host => `${host.username}@${host.address}${host.port !== 22 ? ':' + host.port : ''}`;
+  // Jump hosts in connection order (outermost first), up to 4 levels.
+  function jumps(host) {
+    const { hosts } = store.get(), chain = [];
+    let id = host.jumpHostId;
+    while (id && chain.length < 5 && !chain.some(h => h.id === id)) {
+      const next = hosts.find(h => h.id === id);
+      if (!next) break;
+      chain.unshift(next); id = next.jumpHostId;
+    }
+    return chain;
+  }
   function via(host) {
-    if (!host.jumpHostId) return '';
-    const name = app.hostLabel(host.jumpHostId);
-    return html`<span class="via-chip" title="通过 ${name} 跳转连接">${ico('jump', 'sm')}<span class="truncate">${name}</span></span>`;
+    const chain = jumps(host);
+    if (!chain.length) return '';
+    const names = chain.map(h => h.name);
+    return html`<span class="via-chip" title="${['本机', ...names, host.name].join(' → ')}">${ico('jump', 'sm')}<span class="truncate">${names.join(' › ')}</span></span>`;
   }
   // A small tile with the system's initial; lit when the host is online.
   function glyph(host) {
@@ -175,7 +187,10 @@ export function createHostsPage(element, app) {
   // ---- add / edit ---------------------------------------------------------------------
   async function edit(host, draftValues) {
     const { hosts } = store.get();
-    const jumpCandidates = hosts.filter(h => h.id !== host?.id);
+    // A host can't jump through itself or through a host that already routes through it,
+    // and a route has at most 4 jump hosts.
+    const jumpCandidates = hosts.filter(h => h.id !== host?.id && !jumps(h).some(j => j.id === host?.id) && jumps(h).length < 4);
+    const routeNames = id => { const jump = hosts.find(h => h.id === id); return jump ? [...jumps(jump), jump].map(h => h.name) : []; };
     const groupNames = [...new Set(hosts.map(h => h.group).filter(g => g && g !== '未分组'))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
     const currentGroup = (host?.group || draftValues?.group || '') === '未分组' ? '' : (draftValues?.group ?? host?.group ?? '');
     const jumpLabel = id => {
@@ -183,6 +198,13 @@ export function createHostsPage(element, app) {
       return jump
         ? html`${ico('jump', 'sm')}<span class="picker-label">${jump.name}</span><span class="picker-meta mono truncate">${jump.address}</span>${ico('chevron-down', 'sm')}`
         : html`${ico('arrow-right', 'sm')}<span class="picker-label">直接连接</span><span class="picker-meta"></span>${ico('chevron-down', 'sm')}`;
+    };
+    // 本机 › bastion › gateway › this host — shown once there is at least one jump.
+    const targetName = () => document.querySelector('#h-name')?.value.trim() || document.querySelector('#h-address')?.value.trim() || host?.name || '这台主机';
+    const routeLine = id => {
+      const names = routeNames(id);
+      if (!names.length) return '';
+      return html`<span>本机</span>${names.map(n => html`${ico('chevron-right', 'sm')}<span>${n}</span>`)}${ico('chevron-right', 'sm')}<span class="route-target">${targetName()}</span>`;
     };
     const v = { ...(host || {}), ...(draftValues || {}) };
     const isKey = v.auth === 'key';
@@ -246,6 +268,7 @@ export function createHostsPage(element, app) {
               <span class="field-label" id="h-jump-label">跳板机</span>
               <button class="picker" type="button" id="h-jump" aria-labelledby="h-jump-label" aria-haspopup="menu">${jumpLabel(v.jumpHostId)}</button>
               <input type="hidden" name="jumpHostId" value="${v.jumpHostId || ''}">
+              <p class="route-line" id="h-route" aria-live="polite">${routeLine(v.jumpHostId)}</p>
             </div>` : ''}
         </details>`,
       actions: [{ label: '取消', value: 'cancel', tone: 'ghost' }, { label: host ? '保存' : '添加主机', value: 'ok', tone: 'primary' }],
@@ -275,9 +298,10 @@ export function createHostsPage(element, app) {
         jumpButton?.addEventListener('click', () => menu(jumpButton, [
           { label: '直接连接', icon: 'arrow-right', checked: !jumpInput.value, run: () => pick('') },
           'separator',
-          ...jumpCandidates.map(h => ({ label: h.name, meta: h.address, icon: 'jump', checked: jumpInput.value === h.id, run: () => pick(h.id) })),
+          ...jumpCandidates.map(h => ({ label: h.name, meta: [...jumps(h).map(j => j.name), h.address].join(' › '), icon: 'jump', checked: jumpInput.value === h.id, run: () => pick(h.id) })),
         ], { match: true }));
-        function pick(id) { jumpInput.value = id; render(jumpButton, jumpLabel(id)); }
+        for (const field of ['#h-name', '#h-address']) $(field, dialogElement).addEventListener('input', () => { const t = $('#h-route .route-target', dialogElement); if (t) t.textContent = targetName(); });
+        function pick(id) { jumpInput.value = id; render(jumpButton, jumpLabel(id)); render($('#h-route', dialogElement), routeLine(id)); }
         $('[data-pick-key]', dialogElement).addEventListener('click', async () => {
           const file = await api.pickKey();
           if (file) $('#h-key', dialogElement).value = file;

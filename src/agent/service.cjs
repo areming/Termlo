@@ -10,12 +10,13 @@
 //      planned is executed.
 //   6. "completed" needs a successful on-server result after the last change.
 //   7. Redaction applies to what leaves the trust boundary, never to what is executed.
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const { TaskStore, now } = require('./store.cjs');
 const { TOOLS, MUTATING, toolsFor, validate, define } = require('./tools.cjs');
 const prompt = require('./prompt.cjs');
 const model = require('./model.cjs');
 const { createRedactor } = require('./redact.cjs');
+const { riskOf, approvalKey } = require('./risk.cjs');
 const { AgentRemote, quote } = require('../agent-remote.cjs');
 const { AgentConsole } = require('../agent-console.cjs');
 const { AgentAttachments } = require('../agent-attachments.cjs');
@@ -101,9 +102,9 @@ class AgentService {
     return { ok: true, toolCalling: !!result.message.tool_calls?.some(call => call.function.name === 'connection_check') };
   }
 
-  start({ prompt: goal, hostIds = [], mode = 'execute', credentials = {}, attachmentIds = [] }) {
+  start({ prompt: goal, hostIds = [], mode = 'auto', credentials = {}, attachmentIds = [] }) {
     if (typeof goal !== 'string' || !goal.trim() || goal.length > 12000) throw new Error('请填写任务目标（最多 12000 字）');
-    if (!['execute', 'plan'].includes(mode)) throw new Error('任务模式无效');
+    if (!['auto', 'execute', 'plan'].includes(mode)) throw new Error('任务模式无效');
     if (!Array.isArray(hostIds) || hostIds.length > 20 || hostIds.some(id => typeof id !== 'string')) throw new Error('最多选择 20 台主机');
     this.ensureIdle();
     for (const id of hostIds) this.hosts.get(id);
@@ -145,15 +146,18 @@ class AgentService {
       if (pending) { pending.status = 'answered'; pending.answers = [{ text }]; }
       if (!text) text = '继续完成原目标。';
     }
+    if (pending?.kind === 'approval') {   // a typed reply instead of 允许 / 拒绝 counts as "not now"
+      text = `（没有执行等待确认的操作：${pending.command || pending.path}）\n${text}`;
+    }
     if (hostIds !== undefined) {
-      if (task.mode !== 'plan') throw new Error('只能在规划阶段调整主机');
+      if (task.mode === 'execute') throw new Error('只能在规划阶段调整主机');
       if (!Array.isArray(hostIds) || hostIds.length > 20) throw new Error('最多选择 20 台主机');
       for (const hostId of hostIds) this.hosts.get(hostId);
       task.hostIds = [...new Set(hostIds)];
     }
     this.attachments.validate(attachmentIds, task);
     const attachments = this.attachments.bind(attachmentIds, task);
-    if (task.mode === 'plan') task.proposal = null;
+    if (task.mode === 'plan' || task.mode === 'auto') task.proposal = null;   // a reply reopens the plan
     task.recovery = null;
     task.messages.push({ role: 'user', content: text });
     if (!answer) this.event(task, 'user', text, { attachments });
@@ -169,15 +173,55 @@ class AgentService {
     this.ensureIdle();
     const task = this.store.get(id);
     const proposal = task.proposal;
-    if (task.mode !== 'plan' || task.status !== 'plan_ready' || !proposal || proposal.revision !== revision) throw new Error('方案已变化，请查看最新方案');
+    if (task.mode === 'execute' || task.status !== 'plan_ready' || !proposal || proposal.revision !== revision) throw new Error('方案已变化，请查看最新方案');
     if (proposal.questions.length) throw new Error('方案还有待明确的问题');
     task.approvedPlan = structuredClone(proposal);
-    task.mode = 'execute';
+    if (task.mode === 'plan') task.mode = 'execute';   // auto stays auto: the same conversation goes on
     task.interaction = null;
     task.messages.push({ role: 'user', content: `用户确认执行方案 v${revision}：${JSON.stringify({ title: proposal.title, steps: proposal.steps, checks: proposal.checks })}。按方案执行，并核实环境是否有变化。` });
     this.event(task, 'approval', `开始执行方案 v${revision}`, { revision });
     this.launch(task, credentials);
     return task;
+  }
+
+  // The user's answer to a risk gate. Allowing records exactly that call (tool, host, command or
+  // path + content); the model repeats it and it runs once. Denying tells the model not to retry.
+  approve({ id, requestId, allow, credentials = {} }) {
+    this.ensureIdle();
+    const task = this.store.get(id);
+    const pending = task.interaction;
+    if (pending?.kind !== 'approval' || pending.status !== 'pending' || pending.id !== requestId) throw new Error('这一步已经变化，请查看最新状态');
+    pending.status = allow ? 'allowed' : 'denied';
+    const what = pending.command ? `命令 ${pending.command}` : `写入 ${pending.path}`;
+    if (allow) {
+      task.approvals = [...(task.approvals || []), pending.key];
+      task.messages.push({ role: 'user', content: `用户允许执行（${pending.reason}）：${what}。请原样重新调用这一步，然后继续。` });
+      this.event(task, 'approval', `已允许：${pending.reason}`, { requestId });
+    } else {
+      task.messages.push({ role: 'user', content: `用户拒绝执行（${pending.reason}）：${what}。不要换个写法绕过；改用其他办法，或说明情况后结束。` });
+      this.event(task, 'notice', `已拒绝：${pending.reason}`, { requestId });
+    }
+    task.interaction = null;
+    this.launch(task, credentials);
+    return task;
+  }
+
+  // Risk gate (see risk.cjs): hold a dangerous call until the user allows exactly this call.
+  holdForApproval(run, name, args, event) {
+    const { task } = run;
+    const reason = riskOf(name, args);
+    if (!reason) return null;
+    const key = createHash('sha256').update(approvalKey(name, args)).digest('hex');
+    const approved = (task.approvals || []).indexOf(key);
+    if (approved >= 0) { task.approvals.splice(approved, 1); return null; }   // allowed once
+    const request = {
+      id: randomUUID(), kind: 'approval', status: 'pending', key, reason, tool: name, hostId: args.hostId,
+      ...(name === 'run' ? { command: run.redact.text(args.command) } : { path: args.path }),
+    };
+    task.interaction = request;
+    task.status = 'awaiting_approval';
+    this.event(task, 'approval-request', reason, { request: structuredClone(request), toolEvent: event.id });
+    return { notExecuted: true, waitingForUser: true, status: 'awaiting_approval', reason: `需要用户确认：${reason}` };
   }
 
   async pause(id) {
@@ -288,7 +332,7 @@ class AgentService {
 
   // ---- run lifecycle ----------------------------------------------------------
   ensureIdle() {
-    if (this.active) throw new Error('已有任务在运行，请先暂停或等待完成');
+    if (this.active) throw new Error(`「${this.active.task.title}」还在执行，等它完成或先暂停`);   // one conversation runs at a time
     if (this.busy) throw new Error('正在撤销改动，请稍候');
     if (!this.store.settings.baseUrl || !this.store.settings.model) throw new Error('请先配置模型');
   }
@@ -415,6 +459,10 @@ class AgentService {
       const calls = response.message.tool_calls || [];
       if (!calls.length) {
         if (task.mode === 'plan') { task.status = 'awaiting_reply'; break; }
+        // auto: a plain reply is a conversation turn (it claims nothing). Not allowed while an
+        // approved plan is being carried out (that ends through finish and its checks), after a
+        // change with no successful result since (invariant 6's condition), or with an outcome unknown.
+        if (task.mode === 'auto' && this.mayPauseForReply(run)) { task.status = 'awaiting_reply'; break; }
         if (++nudges > 2) {
           task.status = 'needs_input';
           task.notice = '模型多次没有调用工具，任务未完成。请补充说明后继续，或换用支持工具调用的模型。';
@@ -485,7 +533,8 @@ class AgentService {
         if (event) task.events = task.events.filter(e => e !== event);
         // Rate-limited or out of quota: switch this run to the fallback model, once.
         if (!controller.signal.aborted && [402, 429].includes(error.status) && settings.fallbackModel && settings.model !== settings.fallbackModel) {
-          this.event(task, 'notice', `主模型 ${settings.model} 限流或额度用完，本次任务改用备用模型 ${settings.fallbackModel}。`);
+          const note = `主模型 ${settings.model} 限流或额度用完，改用备用模型 ${settings.fallbackModel}。`;
+          if (!task.events.some(e => e.type === 'notice' && e.content === note)) this.event(task, 'notice', note);   // once per conversation
           settings.model = settings.fallbackModel;
           attempt = 0;
           continue;
@@ -551,7 +600,8 @@ class AgentService {
       event.args = redact.deep(args);   // for display; the raw args are what runs (invariant 7)
       if ('hostId' in args && !task.hostIds.includes(args.hostId)) throw new Error('主机不在本任务范围内');   // invariant 1
       this.guard(run, name, args);
-      result = await this.dispatch(run, name, args);
+      const held = this.holdForApproval(run, name, args, event);
+      result = held || await this.dispatch(run, name, args);
       event.status = result.status === 'running' ? 'running'
         : result.status && result.status !== 'completed' ? result.status
         : result.error ? 'failed' : 'completed';
@@ -723,6 +773,7 @@ class AgentService {
       summary: args.summary, checks, artifacts, at: now(),
     };
     task.status = outcome;
+    if (outcome === 'completed') task.approvedPlan = null;   // later turns in this conversation start fresh
     task.notice = outcome === 'needs_input' ? task.report.headline : '';
     this.event(task, 'result', args.summary, { report: structuredClone(task.report) });
     return { outcome };
@@ -797,6 +848,13 @@ class AgentService {
     run.observed.set(hostId, this.tick());
     run.mustObserve.delete(hostId);
     run.lastSuccessAt = this.tick();
+  }
+
+  mayPauseForReply(run) {
+    const { task } = run;
+    if (task.approvedPlan) return false;
+    if (run.lastMutationAt && run.lastSuccessAt < run.lastMutationAt) return false;
+    return !task.operations.some(op => op.state === 'unknown' && (op.unknownSeq || 0) > (run.observed.get(op.hostId) || 0));
   }
 
   unverified(run) {

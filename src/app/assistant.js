@@ -1,9 +1,10 @@
-// Assistant: conversation + execution console. Only four things are cards — plan, question,
-// recovery, result — because only those need a decision. Everything else is one line.
-import { api, html, raw, ico, render, $, $$, on, dialog, confirm, toast, fail, menu, message, duration, when, escape, selectable } from './ui.js';
+// Assistant (2.2): one conversation per session, sessions listed on the left by host.
+// Commands sit in the conversation as expandable rows. Only decisions are cards — plan,
+// question, approval (risk gate), recovery, result. Everything else is one line.
+import { api, html, raw, ico, render, $, on, dialog, confirm, toast, fail, menu, contextMenu, duration, when, escape } from './ui.js';
 
 const STATUS = {
-  running: ['执行中', 'running'], awaiting_input: ['等你回答', 'warning'], plan_ready: ['方案待确认', 'accent'],
+  running: ['执行中', 'running'], awaiting_input: ['等你回答', 'warning'], awaiting_approval: ['等你确认', 'warning'], plan_ready: ['方案待确认', 'accent'],
   awaiting_reply: ['等你回复', 'accent'], needs_input: ['需要补充', 'warning'], completed: ['已完成', 'success'],
   failed: ['失败', 'danger'], paused: ['已暂停', ''], idle: ['未开始', ''],
 };
@@ -81,14 +82,14 @@ function toolLabel(event) {
   }
 }
 
-const CONSOLE_STATE = { completed: 'success', failed: 'failed', timeout: 'failed', interrupted: 'failed', running: 'running' };
+const CONSOLE_STATE = { completed: 'success', failed: 'failed', timeout: 'failed', interrupted: 'failed', running: 'running', awaiting_approval: 'waiting' };
 
 export function createAssistantPage(element, app) {
   const { store } = app;
   let state = { settings: {}, tasks: [], activeId: null };
   let task = null;            // full detail of the open task
   let currentId = null;
-  let composing = null;       // { hostIds, prompt, mode, attachments }
+  let composing = null;       // { hostIds, attachments }: a new conversation being written
   let refreshTimer = null;
   let thinking = null;        // { taskId, events, text }: live preview of the model's reasoning, cleared by the next event
   let draft = '';
@@ -123,12 +124,16 @@ export function createAssistantPage(element, app) {
     if (element.hidden && root.childElementCount) return;
     const keepFocus = document.activeElement?.id === 'assistant-input';
     const caret = keepFocus ? document.activeElement.selectionStart : null;
-    if (!state.settings.baseUrl || !state.settings.model || state.settings.keyBroken) render(root, setupView());
+    let main;
+    if (!state.settings.baseUrl || !state.settings.model || state.settings.keyBroken) main = setupView();
     // A task is being opened but its detail has not arrived yet: don't fall back to the
-    // new-task view, which would recreate `composing` and keep the page there.
-    else if (currentId && !task && !composing) render(root, html`${header()}<div class="files-state"><span class="spinner"></span></div>`);
-    else if (composing || !task) render(root, composeView());
-    else render(root, taskView());
+    // new-conversation view, which would recreate `composing` and keep the page there.
+    else if (currentId && !task && !composing) main = html`<div class="files-state"><span class="spinner"></span></div>`;
+    else if (composing || !task) main = composeView();
+    else main = taskView();
+    const ready = state.settings.baseUrl && state.settings.model && !state.settings.keyBroken;
+    render(root, html`${ready ? sidebar() : ''}<section class="assistant-main" aria-label="对话">${main}</section>`);
+    root.dataset.sidebar = String(!!ready);
     const stream = $('.stream', root);
     if (stream) stream.scrollTop = stream.scrollHeight;
     const input = $('#assistant-input', root);
@@ -136,22 +141,49 @@ export function createAssistantPage(element, app) {
       input.value = draft;
       if (keepFocus) { input.focus(); input.setSelectionRange(caret, caret); }
     }
-    const modes = $('#assistant-mode', root);
-    if (modes) selectable(modes, '[role="radio"]', 'aria-checked', button => { composing.mode = button.dataset.mode; });
   }
 
   function header() {
     const [label, tone] = STATUS[task?.status] || ['', ''];
     return html`
       <div class="assistant-header">
-        <button class="btn btn-ghost assistant-switch" type="button" data-action="tasks" aria-haspopup="menu">
-          <span class="truncate">${task ? task.title : '新任务'}</span>${ico('chevron-down', 'sm')}
-        </button>
+        <h2 class="assistant-title truncate" title="${task?.prompt || ''}">${task ? task.title : '新对话'}</h2>
         ${task ? html`<span class="badge ${tone ? 'badge-' + tone : ''}">${label}</span>` : ''}
         <span class="toolbar-spacer"></span>
-        ${task ? html`<button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="task-more" aria-label="任务操作" title="任务操作">${ico('more', 'sm')}</button>` : ''}
-        ${task && !composing ? html`<button class="btn btn-sm" type="button" data-action="new">${ico('plus', 'sm')}新任务</button>` : ''}
+        ${task ? html`<button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="task-more" aria-label="对话操作" title="更多">${ico('more', 'sm')}</button>` : ''}
       </div>`;
+  }
+
+  // Sessions, grouped by the host they work on (most recent first).
+  function sidebar() {
+    const groups = new Map();
+    for (const t of state.tasks) {
+      const key = t.hostIds.length === 1 ? t.hostIds[0] : t.hostIds.length ? '*' : '-';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(t);
+    }
+    const groupName = key => key === '*' ? '多台主机' : key === '-' ? '未选主机' : app.hostLabel(key);
+    return html`
+      <aside class="sessions" aria-label="对话列表">
+        <div class="sessions-head">
+          <span class="sessions-title">对话</span>
+          <button class="btn btn-icon btn-sm" type="button" data-action="new" aria-label="新对话" title="新对话">${ico('plus', 'sm')}</button>
+        </div>
+        <div class="sessions-list">
+          ${state.tasks.length ? [...groups].map(([key, list]) => html`
+            <div class="sessions-group">
+              <p class="sessions-group-title truncate">${key.length > 1 && key !== '*' ? ico('host', 'sm') : ''}<span class="truncate">${groupName(key)}</span></p>
+              ${list.map(t => html`
+                <button class="session" type="button" data-task="${t.id}" ${t.id === currentId && !composing ? raw('aria-current="true"') : ''} title="${t.title}">
+                  <span class="session-dot" data-tone="${STATUS[t.status]?.[1] || ''}" aria-hidden="true"></span>
+                  <span class="session-title truncate">${t.title}</span>
+                  <span class="session-time">${when(t.updatedAt)}</span>
+                  <span class="visually-hidden">${STATUS[t.status]?.[0] || ''}</span>
+                </button>`)}
+            </div>`)
+            : html`<p class="sessions-empty">还没有对话</p>`}
+        </div>
+      </aside>`;
   }
 
   function setupView() {
@@ -175,60 +207,46 @@ export function createAssistantPage(element, app) {
   ];
 
   function composeView() {
-    composing ||= { hostIds: [], mode: 'plan', attachments: [] };
+    composing ||= { hostIds: [], attachments: [] };
     const hosts = store.get().hosts.slice().sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
-    const recent = state.tasks.slice(0, 6);
     return html`
       ${header()}
       <div class="compose">
         <div class="compose-main">
           <h2 class="compose-title"><span class="compose-mark" aria-hidden="true">${ico('assistant')}</span>要在服务器上做什么？</h2>
+          <p class="compose-hint">问问题、排查、动手都行；复杂的改动会先给你方案</p>
           <form class="composer composer-large" data-form="start">
             <label class="visually-hidden" for="assistant-input">任务目标</label>
-            <textarea id="assistant-input" name="prompt" rows="4" placeholder="例如：用 Docker 部署 nginx，把 80 端口指向 /srv/site…" required></textarea>
+            <textarea id="assistant-input" name="prompt" rows="4" placeholder="例如：nginx 为什么 502？／用 Docker 部署 nginx，把 80 端口指向 /srv/site…" required></textarea>
             <div class="composer-bar">
-              <div class="segmented segmented-sm" role="radiogroup" aria-label="助手模式" id="assistant-mode">
-                <button type="button" role="radio" data-mode="plan" aria-checked="${composing.mode === 'plan'}" title="先给方案，你确认后再执行">先规划</button>
-                <button type="button" role="radio" data-mode="execute" aria-checked="${composing.mode === 'execute'}" title="直接执行，过程中随时可以补充要求或暂停">直接执行</button>
-              </div>
               <button class="btn btn-sm btn-ghost" type="button" data-action="pick-hosts" aria-haspopup="menu">${ico('host', 'sm')}${composing.hostIds.length ? composing.hostIds.map(app.hostLabel).join('、') : '选择主机'}</button>
               ${composing.attachments.map(a => html`<span class="badge badge-outline">${ico('attach', 'sm')}${a.name}<button class="btn btn-icon btn-sm btn-ghost chip-remove" type="button" data-drop="${a.id}" aria-label="移除附件 ${a.name}" title="移除">${ico('close', 'sm')}</button></span>`)}
               <span class="toolbar-spacer"></span>
               <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="attach" aria-label="添加附件" title="添加附件">${ico('attach', 'sm')}</button>
-              <button class="btn btn-primary btn-sm" type="submit" ${!hosts.length ? raw('disabled') : ''}>${ico('send', 'sm')}开始</button>
+              <button class="btn btn-primary btn-sm" type="submit" ${!hosts.length ? raw('disabled') : ''}>${ico('send', 'sm')}发送</button>
             </div>
           </form>
           ${!hosts.length ? html`<p class="text-muted">还没有主机，<a href="#hosts" data-action="add-host">先添加一台</a></p>`
             : html`<div class="suggestions" aria-label="常用任务">${SUGGESTIONS.map(([icon, label, text]) => html`
                 <button class="suggestion" type="button" data-suggest="${text}" title="${text}">${ico(icon, 'sm')}<span>${label}</span></button>`)}</div>`}
         </div>
-        ${recent.length ? html`
-          <div class="compose-recent">
-            <h3 class="section-title">最近的任务</h3>
-            <ul class="list">${recent.map(t => html`
-              <li class="row"><button class="row-button" type="button" data-task="${t.id}">
-                <span class="row-main"><span class="row-title truncate">${t.title}</span><span class="row-meta">${when(t.updatedAt)}</span></span>
-                <span class="badge ${STATUS[t.status]?.[1] ? 'badge-' + STATUS[t.status][1] : ''}">${STATUS[t.status]?.[0] || t.status}</span>
-              </button></li>`)}</ul>
-          </div>` : ''}
       </div>`;
   }
 
   function taskView() {
     const running = task.status === 'running';
-    const tools = task.events.filter(e => e.type === 'tool' && toolLabel(e));
     const runningTool = running ? [...task.events].reverse().find(e => e.type === 'tool' && e.status === 'running') : null;
     const placeholder = running ? '补充要求，例如 不要重启数据库…（立即生效）'
       : task.status === 'awaiting_input' ? '也可以直接写回答…'
+      : task.status === 'awaiting_approval' ? '也可以直接说怎么做…'
       : task.status === 'plan_ready' ? '想改方案就直接说…'
-      : '继续对话，或说明下一步…';
+      : '继续对话…';
     return html`
       ${header()}
       <div class="assistant">
         <div class="conversation">
           <div class="stream" aria-live="polite">
-            ${task.events.map(event => streamItem(event))}
-            ${runningTool && toolLabel(runningTool) ? html`<p class="msg-step"><span class="spinner"></span>正在${toolLabel(runningTool)}…</p>` : ''}
+            ${streamItems(running)}
             ${running && !runningTool && !task.events.at(-1)?.streaming ? thinkingStep() : ''}
             ${task.recovery ? recoveryCard() : ''}
             ${task.notice && !running && task.status !== 'completed' && !task.events.some(e => (e.type === 'notice' && e.content === task.notice) || (e.type === 'result' && e.report?.headline === task.notice)) ? html`<p class="msg-step" data-tone="warning">${ico('status-warning')}${task.notice}</p>` : ''}
@@ -238,7 +256,6 @@ export function createAssistantPage(element, app) {
             <textarea id="assistant-input" name="message" rows="2" placeholder="${placeholder}"></textarea>
             <div class="composer-bar">
               ${task.hostIds.map(id => html`<span class="badge badge-outline">${ico('host', 'sm')}${app.hostLabel(id)}</span>`)}
-              <span class="text-xs text-muted">${task.mode === 'plan' ? '规划中' : '执行'} · ${task.rounds} 轮</span>
               <span class="toolbar-spacer"></span>
               ${running
                 ? html`<button class="btn btn-sm" type="button" data-action="pause">${ico('stop', 'sm')}暂停</button>
@@ -247,15 +264,31 @@ export function createAssistantPage(element, app) {
             </div>
           </form>
         </div>
-        <aside class="console" aria-label="执行台">
-          <div class="console-header">
-            <span class="console-title">执行台</span>
-            ${running ? html`<span class="status" data-state="running"><span class="dot"></span>执行中</span>` : html`<span class="text-xs text-muted">${tools.length} 步</span>`}
-          </div>
-          ${tools.length ? html`<ul class="console-list">${tools.map(consoleRow)}</ul>`
-            : html`<p class="console-empty text-muted">助手执行的每一步都会出现在这里，点开可以看到原始命令和输出。</p>`}
-        </aside>
       </div>`;
+  }
+
+  // Messages and cards in order; consecutive commands form one block. A finished block of more
+  // than three steps folds into one line ("6 步 · 全部成功"), the live one stays open.
+  function streamItems(running) {
+    const out = [];
+    let group = [];
+    const flush = live => {
+      if (!group.length) return;
+      const rows = html`<ul class="cmd-list">${group.map(stepRow)}</ul>`;
+      if (live || group.length <= 3) out.push(html`<div class="cmd-block">${rows}</div>`);
+      else {
+        const failed = group.filter(e => (CONSOLE_STATE[e.status] || '') === 'failed').length;
+        out.push(html`<details class="cmd-block cmd-fold"><summary>${ico('terminal', 'sm')}<span>${group.length} 步</span><span class="text-muted">${failed ? `${failed} 步失败` : '全部成功'}</span>${ico('chevron-right', 'sm')}</summary>${rows}</details>`);
+      }
+      group = [];
+    };
+    for (const event of task.events) {
+      if (event.type === 'tool') { if (toolLabel(event)) group.push(event); continue; }
+      flush(false);
+      out.push(streamItem(event));
+    }
+    flush(running);
+    return out;
   }
 
   function streamItem(event) {
@@ -266,7 +299,8 @@ export function createAssistantPage(element, app) {
         if (event.superseded || (!event.content && !event.streaming)) return '';
         return html`<div class="msg msg-assistant" data-event="${event.id}">${prose(event.content)}${event.streaming ? html`<span class="caret" aria-hidden="true"></span>` : ''}</div>`;
       case 'notice': return html`<p class="msg-step" data-tone="warning">${ico('status-info')}${event.content}</p>`;
-      case 'approval': return html`<p class="msg-step" data-tone="success">${ico('play')}${event.content}</p>`;
+      case 'approval': return event.revision ? '' : html`<p class="msg-step" data-tone="success">${ico('play')}${event.content}</p>`;   // plan approvals show on the plan itself
+      case 'approval-request': return approvalCard(event);
       case 'question': return questionCard(event);
       case 'proposal': return planCard(event);
       case 'result': return resultCard(event);
@@ -274,21 +308,22 @@ export function createAssistantPage(element, app) {
     }
   }
 
-  function consoleRow(event) {
-    const state = CONSOLE_STATE[event.status] || (event.result?.error ? 'failed' : 'success');
+  function stepRow(event) {
+    let state = CONSOLE_STATE[event.status] || (event.result?.error ? 'failed' : 'success');
+    if (state === 'waiting' && task.status !== 'awaiting_approval') state = 'skipped';
     const r = event.result || {};
     const elapsed = event.finishedAt ? duration(new Date(event.finishedAt) - new Date(event.at)) : '';
     const command = event.name === 'run' ? event.args?.command
       : event.name === 'read_file' || event.name === 'write_file' ? event.args?.path
       : event.name === 'web' ? (event.args?.query || event.args?.url) : event.name === 'inspect' ? `inspect ${event.args?.topic || ''} ${event.args?.target || ''}` : '';
-    const output = r.error ? r.error : r.output ?? (r.content ? r.content.slice(0, 4000) : r.sha256 ? `sha256 ${r.sha256}` : JSON.stringify(r, null, 2).slice(0, 2000));
+    const output = state === 'waiting' || state === 'skipped' ? '' : r.error ? r.error : r.output ?? (r.content ? r.content.slice(0, 4000) : r.sha256 ? `sha256 ${r.sha256}` : JSON.stringify(r, null, 2).slice(0, 2000));
     return html`
       <li>
         <details class="console-row" data-state="${state}">
           <summary>
-            <span class="row-state">${state === 'running' ? html`<span class="spinner"></span>` : ico(state === 'success' ? 'check' : 'close', 'sm')}</span>
+            <span class="row-state">${state === 'running' ? html`<span class="spinner"></span>` : ico({ success: 'check', waiting: 'status-warning', skipped: 'stop' }[state] || 'close', 'sm')}</span>
             <span class="console-label">${toolLabel(event)}</span>
-            <span class="console-meta">${state === 'running' ? '运行中' : r.exitCode !== undefined && r.exitCode !== 0 ? `退出码 ${r.exitCode}` : elapsed}</span>
+            <span class="console-meta">${state === 'running' ? '运行中' : state === 'waiting' ? '等你确认' : state === 'skipped' ? '未执行' : r.exitCode !== undefined && r.exitCode !== 0 ? `退出码 ${r.exitCode}` : elapsed}</span>
             ${ico('chevron-right', 'sm')}
           </summary>
           <div class="console-detail">
@@ -325,6 +360,13 @@ export function createAssistantPage(element, app) {
   function planCard(event) {
     const p = event.proposal;
     const latest = task.proposal?.revision === p.revision && task.status === 'plan_ready';
+    const executed = task.events.some(e => e.type === 'approval' && e.revision === p.revision);
+    if (executed) return html`
+      <details class="cmd-block cmd-fold plan-fold">
+        <summary>${ico('plan', 'sm')}<span>方案：${p.title}</span><span class="badge badge-success">已执行</span>${ico('chevron-right', 'sm')}</summary>
+        <div class="plan-fold-body"><ol class="steps">${p.steps.map(s => html`<li><div>${s}</div></li>`)}</ol>
+          ${p.checks.length ? html`<ul class="checks">${p.checks.map(c => html`<li>${ico('check')}<span>${c}</span></li>`)}</ul>` : ''}</div>
+      </details>`;
     if (!latest) return html`<p class="msg-step">${ico('plan')}方案 v${p.revision}：${p.title}（已被新版本替代）</p>`;
     return html`
       <article class="decision" data-kind="plan">
@@ -337,9 +379,29 @@ export function createAssistantPage(element, app) {
           ${p.questions.length ? html`<p class="field-error">${ico('question', 'sm')}还有 ${p.questions.length} 个问题待明确，回答后助手会更新方案。</p>` : ''}
         </div>
         <footer class="decision-footer">
-          <span class="hint">执行时改过的文件都可以撤销</span>
+          <span class="hint" title="改过的文件都可以撤销">确认后助手会自己做完，危险操作仍会先问你</span>
           <button class="btn btn-ghost" type="button" data-action="revise">修改方案</button>
           <button class="btn btn-primary" type="button" data-action="execute" data-revision="${p.revision}" ${p.questions.length ? raw('disabled') : ''}>${ico('play', 'sm')}执行方案</button>
+        </footer>
+      </article>`;
+  }
+
+  // Risk gate: the exact command (or file) waits for 允许 / 拒绝.
+  function approvalCard(event) {
+    const r = event.request;
+    const live = task.interaction?.id === r.id && task.interaction.status === 'pending' && task.status === 'awaiting_approval';
+    if (!live) return '';
+    return html`
+      <article class="decision" data-kind="approval">
+        <header class="decision-header">${ico('status-warning', 'sm')}<span class="decision-kind">需要你确认</span><h3 class="decision-title">${r.reason}</h3></header>
+        <div class="decision-body">
+          <p class="approval-target">${ico('host', 'sm')}${app.hostLabel(r.hostId)}<span class="text-muted">${r.command ? '将执行' : '将改写'}</span></p>
+          <pre class="code" translate="no"><code>${r.command || r.path}</code></pre>
+        </div>
+        <footer class="decision-footer">
+          <span class="hint">只允许这一次</span>
+          <button class="btn btn-ghost" type="button" data-action="deny">不执行</button>
+          <button class="btn btn-danger" type="button" data-action="allow" data-request="${r.id}">${ico('play', 'sm')}允许执行</button>
         </footer>
       </article>`;
   }
@@ -355,7 +417,6 @@ export function createAssistantPage(element, app) {
           ${r.artifacts?.map(a => html`<div class="deliverable">${ico('link', 'sm')}<span class="deliverable-label">${a.label}</span><span class="mono truncate" translate="no">${a.value}</span><button class="btn btn-icon btn-sm btn-ghost" type="button" data-copy="${a.value}" aria-label="复制 ${a.label}" title="复制">${ico('copy', 'sm')}</button></div>`)}
           <details class="disclosure"><summary>完整报告</summary>${prose(r.summary)}</details>
         </div>
-        <footer class="decision-footer"><span class="hint">${task.rounds} 轮 · ${task.events.filter(e => e.type === 'tool' && toolLabel(e)).length} 步</span></footer>
       </article>`;
   }
 
@@ -391,7 +452,7 @@ export function createAssistantPage(element, app) {
     const credentials = await secrets(composing.hostIds);
     if (!credentials) return;
     try {
-      const { id } = await api.agentStart({ prompt, hostIds: composing.hostIds, mode: composing.mode, attachmentIds: composing.attachments.map(a => a.id), credentials });
+      const { id } = await api.agentStart({ prompt, hostIds: composing.hostIds, attachmentIds: composing.attachments.map(a => a.id), credentials });
       draft = '';
       openTask(id);
     } catch (error) { fail(error); }
@@ -447,7 +508,7 @@ export function createAssistantPage(element, app) {
       const { value } = await dialog({
         title: `删除「${summary.title}」？`,
         body: html`
-          <p>这个任务在服务器上还留有 ${summary.recoverable} 项撤销备份或附件暂存文件。</p>
+          <p>这个对话在服务器上还留有 ${summary.recoverable} 项撤销备份或附件暂存文件。</p>
           <p class="text-muted">清理会删掉这些备份和暂存文件；任务做过的改动保持不变，但之后不能再撤销。只删除记录则服务器上的文件原样保留。</p>`,
         actions: [
           { label: '取消', value: 'cancel', tone: 'ghost' },
@@ -457,59 +518,23 @@ export function createAssistantPage(element, app) {
       });
       if (value !== 'clean' && value !== 'local') return false;
       clean = value === 'clean';
-    } else if (!(await confirm({ title: `删除「${summary.title}」？`, text: '只删除本机上的任务记录，不影响服务器。', action: '删除任务' }))) return false;
+    } else if (!(await confirm({ title: `删除「${summary.title}」？`, text: '只删除本机上的对话记录，不影响服务器。', action: '删除对话' }))) return false;
     const credentials = clean ? await secrets(summary.hostIds) : {};
     if (!credentials) return false;
     try {
       const result = await api.agentRemove({ id, clean, credentials });
-      toast(clean ? `已清理 ${result.cleaned} 项并删除任务` : '已删除任务', { tone: 'success' });
+      toast(clean ? `已清理 ${result.cleaned} 项并删除对话` : '已删除对话', { tone: 'success' });
       if (id === currentId) { currentId = null; task = null; }
       await refresh();
       return true;
     } catch (error) { fail(error); refresh(); return false; }
   }
 
-  async function manageTasks() {
-    let removeId = null;
-    await dialog({
-      title: '全部任务',
-      wide: true,
-      body: html`
-        <div class="input-group">${ico('search')}<input class="input" id="task-filter" type="text" placeholder="按目标或主机筛选…" aria-label="筛选任务" autocomplete="off"></div>
-        <ul class="list task-list" id="task-list" aria-label="任务"></ul>`,
-      actions: [],
-      onOpen(element) {
-        const input = $('#task-filter', element), list = $('#task-list', element);
-        const draw = () => {
-          const q = input.value.trim().toLowerCase();
-          const rows = state.tasks.filter(t => !q || [t.title, t.prompt, ...t.hostIds.map(app.hostLabel)].join(' ').toLowerCase().includes(q));
-          render(list, rows.length ? html`${rows.map(t => html`
-            <li class="row">
-              <button class="row-button" type="button" data-open-task="${t.id}">
-                <span class="row-main"><span class="row-title truncate">${t.title}</span><span class="row-meta">${t.hostIds.map(app.hostLabel).join('、')} · ${when(t.updatedAt)}${t.recoverable ? ` · 服务器上留有 ${t.recoverable} 项备份` : ''}</span></span>
-                <span class="badge ${STATUS[t.status]?.[1] ? 'badge-' + STATUS[t.status][1] : ''}">${STATUS[t.status]?.[0] || t.status}</span>
-              </button>
-              <div class="quick-actions"><button class="btn btn-icon btn-sm btn-ghost" type="button" data-remove-task="${t.id}" aria-label="删除 ${t.title}" title="删除" ${t.id === state.activeId ? raw('disabled') : ''}>${ico('trash', 'sm')}</button></div>
-            </li>`)}` : html`<li class="row"><span class="text-muted">${state.tasks.length ? '没有匹配的任务' : '还没有任务'}</span></li>`);
-        };
-        input.addEventListener('input', draw);
-        on(list, 'click', '[data-open-task]', (_e, button) => { currentId = button.dataset.openTask; composing = null; element.close(); });
-        on(list, 'click', '[data-remove-task]', (_e, button) => { removeId = button.dataset.removeTask; element.close(); });
-        draw();
-        input.focus();
-      },
-    });
-    if (removeId) {
-      if (await removeTask(removeId) && state.tasks.length) manageTasks();
-    } else refresh();
-  }
-
-  function taskMenu(button) {
-    menu(button, [
-      ...state.tasks.slice(0, 8).map(t => ({ label: `${t.title} · ${STATUS[t.status]?.[0] || ''}`, icon: t.id === currentId ? 'check' : 'assistant', run: () => openTask(t.id) })),
-      ...(state.tasks.length ? ['separator', { label: `全部任务（${state.tasks.length}）…`, icon: 'view-list', run: manageTasks }] : []),
-      { label: '新任务', icon: 'plus', run: () => { composing = { hostIds: task?.hostIds || [], mode: 'plan', attachments: [] }; draft = ''; draw(); } },
-    ]);
+  function newConversation(hostIds = task?.hostIds || []) {
+    composing = { hostIds: [...hostIds], attachments: [] };
+    draft = '';
+    draw();
+    $('#assistant-input', root)?.focus();
   }
 
   // ---- events ------------------------------------------------------------------------------
@@ -528,6 +553,18 @@ export function createAssistantPage(element, app) {
     else send(form);
   });
   on(root, 'click', '[data-task]', (_e, button) => openTask(button.dataset.task));
+  root.addEventListener('contextmenu', event => {
+    const button = event.target.closest('[data-task]');
+    if (!button) return;
+    const id = button.dataset.task;
+    const summary = state.tasks.find(t => t.id === id);
+    contextMenu(event, [
+      { label: '打开', icon: 'assistant', run: () => openTask(id) },
+      { label: '在新对话里继续这台主机', icon: 'plus', run: () => newConversation(summary?.hostIds || []) },
+      'separator',
+      { label: '删除对话…', icon: 'trash', danger: true, run: () => removeTask(id) },
+    ]);
+  });
   // Drop files on the new-task composer to attach them.
   root.addEventListener('dragover', event => {
     if (!composing || !event.dataTransfer?.types.includes('Files')) return;
@@ -556,8 +593,7 @@ export function createAssistantPage(element, app) {
     const action = button.dataset.action;
     if (action === 'settings') return app.navigate('settings', { section: 'model' });
     if (action === 'add-host') { event.preventDefault(); return app.navigate('hosts', { add: true }); }
-    if (action === 'new') { composing = { hostIds: task?.hostIds || [], mode: 'plan', attachments: [] }; draft = ''; return draw(); }
-    if (action === 'tasks') return taskMenu(button);
+    if (action === 'new') return newConversation();
     if (action === 'pick-hosts') return pickHosts(button);
     if (action === 'attach') {
       try { const files = await api.agentPickAttachments(); composing.attachments.push(...files); draw(); } catch (error) { fail(error); }
@@ -566,6 +602,14 @@ export function createAssistantPage(element, app) {
     if (!task) return;
     try {
       if (action === 'pause') { await api.agentPause(task.id); return scheduleRefresh(); }
+      if (action === 'allow' || action === 'deny') {
+        const request = task.interaction;
+        if (request?.kind !== 'approval') return;
+        const credentials = await secrets(task.hostIds);
+        if (!credentials) return;
+        await api.agentApprove({ id: task.id, requestId: request.id, allow: action === 'allow', credentials });
+        return scheduleRefresh();
+      }
       if (action === 'execute') {
         const credentials = await secrets(task.hostIds);
         if (!credentials) return;
@@ -590,9 +634,10 @@ export function createAssistantPage(element, app) {
       }
       if (action === 'task-more') {
         return menu(button, [
-          { label: '复制任务目标', icon: 'copy', run: () => api.writeClipboard(task.prompt).then(() => toast('已复制')) },
+          { label: '在新对话里继续这台主机', icon: 'plus', run: () => newConversation() },
+          { label: '复制第一句话', icon: 'copy', run: () => api.writeClipboard(task.prompt).then(() => toast('已复制')) },
           'separator',
-          { label: '删除任务…', icon: 'trash', danger: true, run: () => removeTask(task.id) },
+          { label: '删除对话…', icon: 'trash', danger: true, run: () => removeTask(task.id) },
         ]);
       }
     } catch (error) { fail(error); scheduleRefresh(); }
@@ -635,9 +680,17 @@ export function createAssistantPage(element, app) {
 
   refresh();
   return {
-    show(params) {
+    async show(params) {
+      // Settings (the model) and the conversation list may have changed while away.
+      try { state = await api.agentState(); } catch (error) { fail(error); }
+      // From a host: continue that host's latest conversation (a new one if it has none).
+      if (params?.hostIds?.length && !params.prompt && !params.compose) {
+        const ids = params.hostIds;
+        const latest = state.tasks.find(t => t.hostIds.length === ids.length && ids.every(id => t.hostIds.includes(id)));
+        if (latest) { openTask(latest.id); return; }
+      }
       if (params?.hostIds || params?.prompt || params?.compose) {
-        composing = { hostIds: params.hostIds || [], mode: 'plan', attachments: [] };
+        composing = { hostIds: params.hostIds || [], attachments: [] };
         draft = params.prompt || '';
         draw();
         $('#assistant-input', root)?.focus();

@@ -186,7 +186,9 @@ export function menu(anchor, items, options = {}) {
     ? html`<hr class="menu-sep">`
     : html`<button class="menu-item ${item.danger ? 'menu-item-danger' : ''}" type="button" role="menuitem" data-index="${i}">${item.icon ? ico(item.icon, 'sm') : ''}<span class="menu-text">${item.label}${item.meta ? html`<span class="menu-meta mono">${item.meta}</span>` : ''}</span>${item.hint ? html`<kbd class="menu-hint">${item.hint}</kbd>` : ''}${item.checked ? html`<span class="menu-check">${ico('check', 'sm')}</span>` : ''}</button>`)}`);
   element.popover = 'manual';   // top layer: shows above modal dialogs too
-  document.body.append(element);
+  // A modal dialog makes everything outside it inert (unclickable): open inside the dialog.
+  const host = (anchor instanceof Element && anchor.closest('dialog[open]')) || document.body;
+  host.append(element);
   element.showPopover?.();
   if (options.match && anchor instanceof Element) element.style.width = anchor.offsetWidth + 'px';
   const point = !(anchor instanceof Element);
