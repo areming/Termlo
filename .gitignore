@@ -5,5 +5,3 @@ test-output/
 data/
 *.log
 .cache/
-artifacts/
-git-ready/
