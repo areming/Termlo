@@ -184,7 +184,7 @@ export function menu(anchor, items, options = {}) {
   element.setAttribute('role', 'menu');
   render(element, html`${items.map((item, i) => item === 'separator'
     ? html`<hr class="menu-sep">`
-    : html`<button class="menu-item ${item.danger ? 'menu-item-danger' : ''}" type="button" role="menuitem" data-index="${i}">${item.icon ? ico(item.icon, 'sm') : ''}<span class="menu-label">${item.label}${item.meta ? html`<span class="menu-meta mono">${item.meta}</span>` : ''}</span>${item.hint ? html`<kbd class="menu-hint">${item.hint}</kbd>` : ''}${item.checked ? html`<span class="menu-check">${ico('check', 'sm')}</span>` : ''}</button>`)}`);
+    : html`<button class="menu-item ${item.danger ? 'menu-item-danger' : ''}" type="button" role="menuitem" data-index="${i}">${item.icon ? ico(item.icon, 'sm') : ''}<span class="menu-text">${item.label}${item.meta ? html`<span class="menu-meta mono">${item.meta}</span>` : ''}</span>${item.hint ? html`<kbd class="menu-hint">${item.hint}</kbd>` : ''}${item.checked ? html`<span class="menu-check">${ico('check', 'sm')}</span>` : ''}</button>`)}`);
   element.popover = 'manual';   // top layer: shows above modal dialogs too
   document.body.append(element);
   element.showPopover?.();
@@ -192,7 +192,11 @@ export function menu(anchor, items, options = {}) {
   const point = !(anchor instanceof Element);
   const box = point ? { left: anchor.x, right: anchor.x, top: anchor.y, bottom: anchor.y } : anchor.getBoundingClientRect();
   const width = element.offsetWidth, height = element.offsetHeight;
-  element.style.left = Math.max(8, Math.min(point ? box.left : box.right - width, innerWidth - width - 8)) + 'px';
+  // Open toward the page: start at the anchor's left edge, or end at its right edge when that
+  // would run off the window. Never cover the navigation rail.
+  const floor = (document.querySelector('.rail')?.getBoundingClientRect().right ?? 0) + 8;
+  const start = point || box.left + width <= innerWidth - 8 ? box.left : box.right - width;
+  element.style.left = Math.max(point ? 8 : Math.min(floor, box.left), Math.min(start, innerWidth - width - 8)) + 'px';
   element.style.top = (box.bottom + height + 8 > innerHeight ? box.top - height - 4 : box.bottom + 4) + 'px';
   const close = () => { element.remove(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', key, true); (point ? anchor.focus : anchor)?.focus?.(); };
   const outside = event => { if (!element.contains(event.target)) close(); };

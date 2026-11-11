@@ -128,7 +128,7 @@ export function createSettingsPage(element, app) {
 
         <section class="settings-section" aria-labelledby="s-about">
           <header><h2 class="title-lg" id="s-about">关于</h2></header>
-          <div class="card settings-card">
+          <div class="card settings-card settings-about">
             <p>Termlo ${version}</p>
             <p class="text-muted text-xs">本地优先：主机、密码和任务记录只保存在这台电脑上。</p>
           </div>

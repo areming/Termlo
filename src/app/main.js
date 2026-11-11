@@ -42,8 +42,8 @@ function renderShell() {
       </div>
     </nav>
     <header class="topbar">
-      <span class="topbar-brand" translate="no">Termlo</span><span class="topbar-sep" aria-hidden="true">/</span>
-      <h1 class="topbar-title" id="page-title">主机</h1>
+      <span class="topbar-brand" translate="no">Termlo</span>
+      <h1 class="visually-hidden" id="page-title">主机</h1>
       <span class="toolbar-spacer"></span>
       <div class="global-search" id="global-search-box">
         ${ico('search', 'sm')}
@@ -132,7 +132,7 @@ async function credentials(hostId, { force = false, reason = '' } = {}) {
           <label class="field-label" for="cred-secret">${label}</label>
           <input class="input" id="cred-secret" name="secret" type="password" autocomplete="off" ${needsPassword ? raw('required') : ''} autofocus>
         </div>
-        ${needsPassword ? html`<label class="check"><input type="checkbox" name="remember">记住密码（用系统加密保存在本机）</label>` : ''}`,
+        ${needsPassword ? html`<label class="check"><input type="checkbox" name="remember"><span title="用系统加密保存在本机，不会上传">记住密码</span></label>` : ''}`,
       actions: [{ label: '取消', value: 'cancel', tone: 'ghost' }, { label: '连接', value: 'ok', tone: 'primary' }],
     });
     if (value !== 'ok') return null;
@@ -161,7 +161,10 @@ async function showPrompt({ id, options }) {
   const tone = options.type === 'warning' || options.type === 'error' ? 'danger' : 'primary';
   const { value } = await dialog({
     title: options.message,
-    body: html`<p class="prompt-detail">${options.detail || ''}</p>`,
+    // One paragraph per line; fingerprints get their own monospace block so they can be compared.
+    body: html`<div class="prompt-detail">${String(options.detail || '').split(/\n+/).filter(Boolean).map(line => /^(SHA256|MD5):/.test(line.trim())
+      ? html`<code class="fingerprint">${line.trim()}</code>`
+      : html`<p>${line}</p>`)}</div>`,
     actions: buttons.map((label, index) => ({
       label, value: String(index),
       tone: index === buttons.length - 1 && buttons.length > 1 ? tone : 'ghost',
