@@ -67,7 +67,10 @@ class TaskStore {
     if (!model || model.length > 200) throw new Error('请填写模型名称');
     const maxRounds = Number(input.maxRounds || 60);
     if (!Number.isInteger(maxRounds) || maxRounds < 5 || maxRounds > 300) throw new Error('单次运行的模型调用上限应为 5–300');
-    const next = { baseUrl, model, maxRounds };
+    const fallbackModel = String(input.fallbackModel || '').trim();
+    if (fallbackModel.length > 200) throw new Error('备用模型名称过长');
+    if (fallbackModel && fallbackModel === model) throw new Error('备用模型不能和主模型相同');
+    const next = { baseUrl, model, maxRounds, ...(fallbackModel ? { fallbackModel } : {}) };
     // A stored key is never forwarded to a different endpoint.
     if (baseUrl === this.settings.baseUrl && !input.clearKey) next.encryptedKey = this.settings.encryptedKey;
     if (typeof input.apiKey === 'string' && input.apiKey.trim()) {

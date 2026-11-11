@@ -466,6 +466,13 @@ class AgentService {
         return { ...result, event };
       } catch (error) {
         if (event) task.events = task.events.filter(e => e !== event);
+        // Rate-limited or out of quota: switch this run to the fallback model, once.
+        if (!controller.signal.aborted && [402, 429].includes(error.status) && settings.fallbackModel && settings.model !== settings.fallbackModel) {
+          this.event(task, 'notice', `主模型 ${settings.model} 限流或额度用完，本次任务改用备用模型 ${settings.fallbackModel}。`);
+          settings.model = settings.fallbackModel;
+          attempt = 0;
+          continue;
+        }
         if (controller.signal.aborted || attempt >= 3 || !error.retryable) throw error;
         this.event(task, 'notice', `模型连接异常，正在重试（${attempt}/2）…`);
         await new Promise(resolve => setTimeout(resolve, 1500 * attempt));

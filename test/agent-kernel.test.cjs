@@ -422,3 +422,23 @@ test('deleting without clean leaves the server untouched', async t => {
   assert.equal(connected, false);
   assert.ok(!agent.store.tasks.some(x => x.id === task.id));
 });
+
+test('a rate-limited primary model hands the rest of the run to the fallback model', async t => {
+  const { ModelError } = require('../src/agent/model.cjs');
+  const models = [];
+  const { agent } = setup(t, {
+    script: (round, options) => {
+      models.push(options.model);
+      if (options.model === 'test') throw new ModelError('模型接口返回 HTTP 429', { status: 429, retryable: true });
+      return models.filter(m => m === 'cheap').length === 1
+        ? reply([call('inspect', { hostId: 'h1', topic: 'overview' })])
+        : reply([call('finish', { outcome: 'completed', headline: '完成', summary: '完成', checks: [{ label: '检查', status: 'passed' }] })]);
+    },
+  });
+  agent.configure({ baseUrl: 'https://model.example/v1', model: 'test', fallbackModel: 'cheap', maxRounds: 12 });
+  assert.throws(() => agent.configure({ baseUrl: 'https://model.example/v1', model: 'test', fallbackModel: 'test' }), /不能和主模型相同/);
+  const task = await runTask(agent, { prompt: '检查' });
+  assert.deepEqual(models, ['test', 'cheap', 'cheap']);
+  assert.equal(task.status, 'completed');
+  assert.ok(task.events.some(e => e.type === 'notice' && e.content.includes('备用模型 cheap')));
+});

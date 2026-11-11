@@ -44,6 +44,11 @@ export function createSettingsPage(element, app) {
               </div>
             </div>
             <div class="field">
+              <label class="field-label" for="m-fallback">备用模型<span class="optional">可选</span></label>
+              <input class="input mono" id="m-fallback" name="fallbackModel" value="${settings.fallbackModel || ''}" placeholder="例如更便宜的收费模型…" spellcheck="false">
+              <p class="field-help">主模型限流或额度用完时，本次任务自动改用它（同一接口和密钥）。适合主模型用免费额度的情况。</p>
+            </div>
+            <div class="field">
               <label class="field-label" for="m-key">API 密钥<span class="optional">${settings.keyBroken ? '' : settings.hasKey ? '已保存，留空则不变' : '本机接口可以不填'}</span></label>
               <input class="input mono" id="m-key" name="apiKey" type="password" placeholder="${settings.hasKey ? '••••••••' : 'sk-…'}" autocomplete="off">
               ${settings.keyBroken ? html`<p class="field-error">${ico('status-warning', 'sm')}已保存的密钥无法在这台电脑上解密，请重新填写。</p>` : html`<p class="field-help">用系统加密保存在本机。更换接口地址后需要重新填写。</p>`}
@@ -104,7 +109,7 @@ export function createSettingsPage(element, app) {
     const form = event.target;
     const data = Object.fromEntries(new FormData(form));
     try {
-      settings = await api.agentConfigure({ baseUrl: data.baseUrl.trim(), model: data.model.trim(), maxRounds: Number(data.maxRounds), ...(data.apiKey ? { apiKey: data.apiKey } : {}) });
+      settings = await api.agentConfigure({ baseUrl: data.baseUrl.trim(), model: data.model.trim(), fallbackModel: data.fallbackModel.trim(), maxRounds: Number(data.maxRounds), ...(data.apiKey ? { apiKey: data.apiKey } : {}) });
       toast('已保存模型设置', { tone: 'success' });
       draw();
     } catch (error) { fail(error); }
