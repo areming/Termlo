@@ -64,7 +64,6 @@ function fakeRemote(behaviour = {}) {
 
 function setup(t, { script, remote = fakeRemote(), password = 'root', mode, syncWaitSeconds } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'termlo-kernel-'));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const host = { id: 'h1', name: 'web', address: '192.0.2.10', port: 22, username: 'root', auth: 'password' };
   const requests = [];
   let round = 0;
@@ -76,7 +75,8 @@ function setup(t, { script, remote = fakeRemote(), password = 'root', mode, sync
     complete: async options => { requests.push(options); return script(round++, options, agent); },
   });
   agent.configure({ baseUrl: 'https://model.example/v1', model: 'test', apiKey: 'sk-test-key-0123456789abcdef', maxRounds: 12 });
-  t.after(() => agent.close());
+  // Close first: it flushes pending saves into the directory.
+  t.after(() => { agent.close(); fs.rmSync(directory, { recursive: true, force: true }); });
   return { agent, requests, remote, mode };
 }
 
@@ -441,4 +441,34 @@ test('a rate-limited primary model hands the rest of the run to the fallback mod
   assert.deepEqual(models, ['test', 'cheap', 'cheap']);
   assert.equal(task.status, 'completed');
   assert.ok(task.events.some(e => e.type === 'notice' && e.content.includes('备用模型 cheap')));
+});
+
+test('undo removes the server backup once the original is restored', async t => {
+  const { identityKey } = require('../src/host-os.cjs');
+  const events = [];
+  const remote = fakeRemote();
+  const factory = remote.factory;
+  let failClean = false;
+  remote.factory = options => Object.assign(factory(options), {
+    async undoWrite(record) { events.push('undo ' + record.path); },
+    async cleanRecovery(records) { if (failClean) throw new Error('权限不足'); events.push(...records.map(r => 'clean ' + r.path)); },
+  });
+  const { agent } = setup(t, { script: () => reply([]), remote });
+  const host = agent.hosts.get('h1');
+  const task = agent.store.create({ prompt: '改配置', hostIds: ['h1'], mode: 'execute' });
+  const change = path => ({ id: path, hostId: 'h1', path, state: 'applied', recovery: { directory: '/tmp/termus-recovery-' + task.id }, identity: identityKey(host) });
+  task.fileChanges = [change('/a.conf'), change('/b.conf')];
+  agent.store.save(task, true);
+
+  assert.deepEqual(await agent.recover({ id: task.id, action: 'undo' }), { restored: 2, failed: 0 });
+  assert.deepEqual(events, ['undo /b.conf', 'clean /b.conf', 'undo /a.conf', 'clean /a.conf']);
+  assert.equal(agent.state().tasks.find(x => x.id === task.id).recoverable, 0);
+
+  // A backup that cannot be removed does not fail the undo, but the user is told where it is.
+  const second = agent.store.create({ prompt: '改配置', hostIds: ['h1'], mode: 'execute' });
+  second.fileChanges = [{ ...change('/c.conf'), recovery: { directory: '/tmp/termus-recovery-' + second.id } }];
+  agent.store.save(second, true);
+  failClean = true;
+  assert.deepEqual(await agent.recover({ id: second.id, action: 'undo' }), { restored: 1, failed: 0 });
+  assert.match(agent.task(second.id).notice, /1 份备份没能从服务器删除/);
 });

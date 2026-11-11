@@ -40,8 +40,14 @@
 .host-card .quick-actions { opacity: 1; }
 .host-badges { display: flex; flex-wrap: wrap; gap: var(--sp-1); min-width: 0; }
 .host-row .row-aside { min-width: calc(var(--sp-8) * 3); }
+/* The name link covers its own row only; row buttons sit above it. */
+.host-row { position: relative; }
+.host-row .quick-actions { position: relative; z-index: var(--z-raised); opacity: 1; }
 .status-dot-slot { display: inline-grid; place-items: center; width: var(--icon-md); color: var(--muted); }
 .tabs { margin-top: var(--sp-2); }
+.host-groups-bar { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.host-groups-bar .tabs { flex: 1; min-width: 0; overflow-x: auto; }
+.host-groups-bar > .btn { margin-top: var(--sp-2); flex: none; }
 
 /* ---- terminal --------------------------------------------------------------------- */
 .view[data-view="terminal"], .view[data-view="files"], .view[data-view="assistant"] { height: 100%; min-height: 0; overflow: hidden; }

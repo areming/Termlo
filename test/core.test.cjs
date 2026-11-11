@@ -65,3 +65,18 @@ test('encrypted private key authentication and independent concurrent sessions',
   await Promise.all([first.shell(), second.shell()]);
   first.close(); assert.equal(second.connected, true); assert.equal((await second.list('/')).path, '/');
 });
+test('hosts move between groups in one write, keeping saved passwords', t => {
+  const store = new Store(temp(t), vault);
+  store.save({ ...base, name: 'a', group: '旧组', password: 'secret-value', rememberPassword: true });
+  store.save({ ...base, name: 'b', address: '127.0.0.2', group: '旧组' });
+  store.save({ ...base, name: 'c', address: '127.0.0.3', group: '其他' });
+  const ids = store.list().filter(h => h.group === '旧组').map(h => h.id);
+  const groups = () => Object.fromEntries(store.list().map(h => [h.name, h.group]));
+  store.setGroup(ids, '  新组 ');
+  assert.deepEqual(groups(), { a: '新组', b: '新组', c: '其他' });
+  assert.equal(store.password(ids[0]), 'secret-value');
+  store.setGroup([ids[1]], '');
+  assert.equal(groups().b, '未分组');
+  assert.throws(() => store.setGroup(['missing'], 'x'), /主机不存在/);
+  assert.throws(() => store.setGroup([], 'x'), /没有选择主机/);
+});

@@ -58,7 +58,7 @@ export function createSettingsPage(element, app) {
               <button class="btn btn-primary" type="submit">保存</button>
             </div>
           </form>
-          <p class="text-xs text-muted">使用助手时，服务器上的命令输出会发送给你配置的模型服务商。密码、私钥和常见令牌在发送前会被隐藏。</p>
+          <p class="text-xs text-muted">使用助手时，命令输出会发给这里配置的模型服务。详见下方安全说明。</p>
         </section>
 
         <section class="settings-section" aria-labelledby="s-look">
@@ -91,6 +91,24 @@ export function createSettingsPage(element, app) {
                 <div class="quick-actions"><button class="btn btn-icon btn-sm btn-ghost" type="button" data-forget="${k.key}" aria-label="删除 ${k.address} 的指纹" title="删除指纹">${ico('trash', 'sm')}</button></div>
               </li>`)}</ul>`
           : html`<p class="text-muted">还没有记录。</p>`}
+        </section>
+
+        <section class="settings-section" aria-labelledby="s-safety">
+          <header><h2 class="title-lg" id="s-safety">安全说明</h2></header>
+          <div class="card settings-card">
+            <div class="setting">
+              <span class="setting-text"><span>助手能做什么</span><span class="text-xs text-muted">拥有你所选 SSH 账户的权限，只能操作这次任务选中的主机。</span></span>
+            </div>
+            <div class="setting">
+              <span class="setting-text"><span>什么会发给模型</span><span class="text-xs text-muted">任务内容和命令输出。密码、私钥和常见令牌发送前会被隐藏；少于 8 个字符的密码无法可靠隐藏。</span></span>
+            </div>
+            <div class="setting">
+              <span class="setting-text"><span>什么能撤销</span><span class="text-xs text-muted">只有助手用“修改文件”做的改动会自动备份、可以撤销。安装软件、启动服务等命令需要你另行检查。</span></span>
+            </div>
+            <div class="setting">
+              <span class="setting-text"><span>密钥保存在哪</span><span class="text-xs text-muted">SSH 密码、私钥口令和模型密钥用系统加密保存在这台电脑上，不上传。</span></span>
+            </div>
+          </div>
         </section>
 
         <section class="settings-section" aria-labelledby="s-about">

@@ -78,6 +78,14 @@ class Store {
   cacheOperatingSystem(id,os,key){const {OS_NAMES,identityKey}=require('./host-os.cjs');const host=this.get(id);if(!OS_NAMES[os]||identityKey(host)!==key)return false;this.commit({...this.data,hosts:this.data.hosts.map(h=>h.id===id?{...h,operatingSystem:{id:os,observedAt:new Date().toISOString()}}:h)});return true;}
   cacheInventory(id,info,key){const {OS_NAMES,identityKey}=require('./host-os.cjs');if(!OS_NAMES[info?.id]||identityKey(this.get(id))!==key)return false;const observedAt=new Date().toISOString();this.commit({...this.data,hosts:this.data.hosts.map(h=>h.id===id?{...h,operatingSystem:{id:info.id,name:info.name,family:info.family,observedAt},specifications:{architecture:info.architecture,cpuCount:info.cpuCount,memoryTotal:info.memoryTotal,rootTotal:info.rootTotal,observedAt}}:h)});return true;}
   cacheCloud(id,cloud,key){const {identityKey}=require('./host-os.cjs');if(identityKey(this.get(id))!==key)return false;this.commit({...this.data,hosts:this.data.hosts.map(h=>h.id===id?{...h,cloudIdentity:cloud}:h)});return true;}
+  // Move hosts to a group in one write; an empty name means 未分组. Used for rename, ungroup and move.
+  setGroup(ids, group) {
+    if (!Array.isArray(ids) || !ids.length) throw new Error('没有选择主机');
+    for (const id of ids) this.get(id);
+    const name = text(group) || '未分组';
+    this.commit({ ...this.data, hosts: this.data.hosts.map(h => ids.includes(h.id) ? { ...h, group: name } : h) });
+    return this.list();
+  }
   remove(id) {
     this.get(id);
     const dependent = this.data.hosts.find(host => host.jumpHostId === id);

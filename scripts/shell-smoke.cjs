@@ -144,6 +144,9 @@ async function main() {
       await page.getByRole('button', { name: '测试连接' }).click();
       await page.getByText('连接正常，模型支持工具调用').waitFor({ timeout: 15000 });
       await shot('dark-settings');
+      await page.getByRole('heading', { name: '安全说明' }).scrollIntoViewIfNeeded();
+      await page.getByText('什么能撤销').waitFor();
+      await shot('dark-settings-safety');
     });
 
     await step('assistant runs a task to a verified result', async () => {
@@ -182,6 +185,33 @@ async function main() {
       await page.getByLabel('搜索主机或操作').fill('fixture');
       await shot('dark-palette');
       await page.keyboard.press('Escape');
+    });
+
+    await step('host list view and groups', async () => {
+      await page.locator('.rail-item[data-page="hosts"]').click();
+      await page.getByRole('radio', { name: '列表' }).click();
+      const row = page.locator('.host-row').first();
+      await row.waitFor();
+      // Row buttons and the page around the list must not open the terminal.
+      await page.locator('.page-title').click();
+      await row.getByRole('button', { name: '更多操作' }).click();
+      await page.getByRole('menuitem', { name: '移到分组…' }).click();
+      await page.getByLabel('分组名称').fill('测试组');
+      await page.getByRole('button', { name: '移动', exact: true }).click();
+      await page.getByText('已移到“测试组”').waitFor();
+      assert.equal(await page.locator('.rail-item[data-page="hosts"]').getAttribute('aria-current'), 'page');
+      await page.getByRole('tab', { name: /测试组/ }).click();
+      await page.getByRole('button', { name: /管理分组/ }).click();
+      await page.getByRole('menuitem', { name: '重命名分组…' }).click();
+      await page.getByLabel('分组名称').fill('生产');
+      await page.getByRole('button', { name: '重命名', exact: true }).click();
+      await page.getByRole('tab', { name: /生产/, selected: true }).waitFor();
+      await shot('dark-hosts-list-groups');
+      await page.getByRole('button', { name: /管理分组/ }).click();
+      await page.getByRole('menuitem', { name: '解散分组' }).click();
+      await page.getByRole('button', { name: '解散分组' }).click();
+      await page.getByText('已解散分组“生产”').waitFor();
+      await page.getByRole('radio', { name: '卡片' }).click();
     });
 
     await step('light theme', async () => {

@@ -181,6 +181,7 @@ function installHandlers() {
 
   // hosts
   handle('saveHost', input => store.save(input));
+  handle('setHostGroup', (ids, group) => store.setGroup(ids, group));
   handle('deleteHost', id => {
     if ([...connections.values()].some(ssh => ssh.hostId === id)) throw new Error('请先关闭这台主机的终端和文件连接');
     store.remove(id);

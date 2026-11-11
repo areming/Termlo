@@ -107,10 +107,13 @@ export function createHostsPage(element, app) {
           <button class="btn" type="button" data-action="import">导入</button>
           <button class="btn btn-primary" type="button" data-action="add">${ico('plus')}添加主机</button>
         </div>
-        ${groupList.length > 1 ? html`
-          <div class="tabs" role="tablist" aria-label="主机分组" id="host-groups">
-            <button class="tab" type="button" role="tab" data-group="全部" aria-selected="${group === '全部'}">全部<span class="count">${hosts.length}</span></button>
-            ${groupList.map(([name, count]) => html`<button class="tab" type="button" role="tab" data-group="${name}" aria-selected="${group === name}">${name}<span class="count">${count}</span></button>`)}
+        ${groupList.length > 1 || groupList[0]?.[0] !== '未分组' ? html`
+          <div class="host-groups-bar">
+            <div class="tabs" role="tablist" aria-label="主机分组" id="host-groups">
+              <button class="tab" type="button" role="tab" data-group="全部" aria-selected="${group === '全部'}">全部<span class="count">${hosts.length}</span></button>
+              ${groupList.map(([name, count]) => html`<button class="tab" type="button" role="tab" data-group="${name}" aria-selected="${group === name}">${name}<span class="count">${count}</span></button>`)}
+            </div>
+            ${group !== '全部' && group !== '未分组' ? html`<button class="btn btn-sm btn-ghost" type="button" data-action="group-menu" title="重命名或解散分组“${group}”">${ico('more', 'sm')}管理分组</button>` : ''}
           </div>` : ''}
         ${!list.length ? html`<p class="text-muted empty-inline">没有匹配的主机。</p>`
           : view === 'list' ? html`<ul class="list host-list">${list.map(h => row(h, connected.has(h.id)))}</ul>`
@@ -231,6 +234,51 @@ export function createHostsPage(element, app) {
     }
   }
 
+  // ---- groups ------------------------------------------------------------------------
+  // Ask for a group name; existing names are offered. Returns the trimmed name, '' for 未分组, or null.
+  async function askGroup({ title, value = '', action, help, allowEmpty = false }) {
+    const names = groups(store.get().hosts).map(([name]) => name).filter(name => name !== '未分组');
+    const { value: choice, form } = await dialog({
+      title,
+      body: html`
+        <div class="field">
+          <label class="field-label" for="g-name">分组名称</label>
+          <input class="input" id="g-name" name="group" list="g-names" value="${value}" maxlength="200" placeholder="例如 生产环境…" autocomplete="off" ${allowEmpty ? '' : raw('required')}>
+          <datalist id="g-names">${names.map(name => html`<option value="${name}">`)}</datalist>
+          ${help ? html`<p class="field-help">${help}</p>` : ''}
+        </div>`,
+      actions: [{ label: '取消', value: 'cancel', tone: 'ghost' }, { label: action, value: 'ok', tone: 'primary' }],
+      onOpen: element => $('#g-name', element).select(),
+    });
+    return choice === 'ok' ? form.group.value.trim() : null;
+  }
+
+  async function moveHosts(ids, name, message) {
+    try {
+      store.set({ hosts: await api.setHostGroup(ids, name) });
+      toast(message, { tone: 'success' });
+    } catch (error) { fail(error); }
+  }
+
+  function groupMenu(anchor) {
+    const name = group;
+    const ids = store.get().hosts.filter(h => (h.group || '未分组') === name).map(h => h.id);
+    menu(anchor, [
+      { label: '重命名分组…', icon: 'edit', run: async () => {
+        const next = await askGroup({ title: `重命名分组“${name}”`, value: name, action: '重命名', help: '填已有的分组名会把两个分组合并。' });
+        if (!next || next === name) return;
+        group = next;
+        await moveHosts(ids, next, `已重命名为“${next}”`);
+      } },
+      { label: '解散分组', icon: 'trash', danger: true, run: async () => {
+        const ok = await confirm({ title: `解散分组“${name}”？`, text: `其中 ${ids.length} 台主机会移到“未分组”，主机本身不会删除。`, action: '解散分组' });
+        if (!ok) return;
+        group = '全部';
+        await moveHosts(ids, '', `已解散分组“${name}”`);
+      } },
+    ]);
+  }
+
   async function remove(host) {
     const ok = await confirm({ title: `删除主机 ${host.name}？`, text: '主机配置和保存的密码会从本机删除，服务器上的内容不受影响。', action: '删除主机' });
     if (!ok) return;
@@ -284,6 +332,7 @@ export function createHostsPage(element, app) {
     event.preventDefault();
     if (action === 'add') return edit(null);
     if (action === 'import') return importConfig();
+    if (action === 'group-menu') return groupMenu(target);
     if (!host) return;
     if (action === 'terminal') return app.navigate('terminal', { hostId });
     if (action === 'files') return app.navigate('files', { hostId });
@@ -292,6 +341,11 @@ export function createHostsPage(element, app) {
       return menu(target, [
         { label: '打开终端', icon: 'terminal', run: () => app.navigate('terminal', { hostId }) },
         { label: '编辑主机', icon: 'edit', run: () => edit(host) },
+        { label: '移到分组…', icon: 'folder', run: async () => {
+          const next = await askGroup({ title: `把 ${host.name} 移到分组`, value: host.group === '未分组' ? '' : host.group, action: '移动', help: '输入新名称会新建分组；留空则移到“未分组”。', allowEmpty: true });
+          if (next === null) return;
+          await moveHosts([host.id], next, `已移到“${next || '未分组'}”`);
+        } },
         { label: '复制地址', icon: 'copy', run: () => api.writeClipboard(`${host.username}@${host.address}`).then(() => toast('已复制')) },
         'separator',
         { label: '删除主机…', icon: 'trash', danger: true, run: () => remove(host) },
