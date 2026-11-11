@@ -3,18 +3,34 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { api, html, ico, render, $, $$, on, toast, fail, menu, message, uid } from './ui.js';
+import { SemanticHighlights } from './terminal-highlights.js';
+import { view } from './telemetry.js';
+
+// Terminal fonts offered in settings. JetBrains Mono ships with the app.
+export const TERMINAL_FONTS = {
+  jetbrains: { label: 'JetBrains Mono（内置）', family: '"JetBrains Mono", "Cascadia Code", Consolas, monospace' },
+  cascadia: { label: 'Cascadia Code', family: '"Cascadia Code", "Cascadia Mono", Consolas, monospace' },
+  system: { label: '系统等宽字体', family: 'Consolas, "SF Mono", Menlo, monospace' },
+};
+const fontFamily = key => (TERMINAL_FONTS[key] || TERMINAL_FONTS.jetbrains).family;
+const fontsReady = document.fonts.load('14px "JetBrains Mono"').catch(() => {});
 
 const AUTH_FAILURE = /authentication|认证|密码|passphrase|All configured authentication methods failed/i;
 
 function terminalTheme() {
   const style = getComputedStyle(document.documentElement);
   const get = name => style.getPropertyValue(name).trim();
+  const ansi = name => get('--ansi-' + name);
   return {
     background: get('--terminal-bg'),
     foreground: get('--terminal-text'),
     cursor: get('--accent'),
     cursorAccent: get('--terminal-bg'),
-    selectionBackground: get('--accent-soft'),
+    selectionBackground: get('--terminal-selection'),
+    black: ansi('black'), red: ansi('red'), green: ansi('green'), yellow: ansi('yellow'),
+    blue: ansi('blue'), magenta: ansi('magenta'), cyan: ansi('cyan'), white: ansi('white'),
+    brightBlack: ansi('bright-black'), brightRed: ansi('bright-red'), brightGreen: ansi('bright-green'), brightYellow: ansi('bright-yellow'),
+    brightBlue: ansi('bright-blue'), brightMagenta: ansi('bright-magenta'), brightCyan: ansi('bright-cyan'), brightWhite: ansi('bright-white'),
   };
 }
 
@@ -33,6 +49,7 @@ export function createTerminalPage(element, app) {
         <button class="btn btn-icon btn-sm btn-ghost" type="button" data-search="close" aria-label="关闭查找" title="关闭查找 (Esc)">${ico('close', 'sm')}</button>
       </div>
       <div class="terminal-panes" id="term-panes"></div>
+      <div class="terminal-status" id="term-status" hidden></div>
       <div class="terminal-empty" id="term-empty"></div>
     </div>`);
   const tabStrip = $('#term-tabs', element);
@@ -40,6 +57,21 @@ export function createTerminalPage(element, app) {
   const empty = $('#term-empty', element);
   const searchBar = $('#term-search', element);
   const searchInput = $('#term-search-input', element);
+  const statusBar = $('#term-status', element);
+
+  // Live state of the active tab's host under the terminal.
+  function drawStatus() {
+    statusBar.hidden = !active;
+    if (!active) return;
+    const host = store.get().hosts.find(h => h.id === active.hostId);
+    const state = { ready: 'connected', connecting: 'connecting', closed: 'disconnected', failed: 'failed' }[active.status] || 'connecting';
+    const label = { connected: '已连接', connecting: '连接中…', disconnected: '已断开', failed: '连接失败' }[state];
+    render(statusBar, html`
+      <span class="status" data-state="${state}"><span class="dot"></span>${label}</span>
+      ${host?.operatingSystem?.name ? html`<span class="terminal-status-os truncate">${host.operatingSystem.name}</span>` : ''}
+      <div class="terminal-telemetry" data-telemetry="${active.hostId}" data-variant="bar">${active.status === 'ready' ? view('bar', app.telemetry.get(active.hostId), app.telemetry.history(active.hostId)) : ''}</div>`);
+  }
+  app.telemetry.subscribe(hostId => { if (active?.hostId === hostId && active.status === 'ready') app.telemetry.patch(statusBar, hostId); });
 
   function publish() {
     const others = (store.get().sessions || []).filter(s => s.kind !== 'terminal');
@@ -57,6 +89,7 @@ export function createTerminalPage(element, app) {
       <button class="btn btn-icon btn-sm btn-ghost terminal-new" type="button" data-new aria-label="新建终端" title="新建终端">${ico('plus', 'sm')}</button>`);
     empty.hidden = tabs.length > 0;
     panes.hidden = tabs.length === 0;
+    drawStatus();
     if (!tabs.length) drawEmpty();
   }
 
@@ -115,10 +148,15 @@ export function createTerminalPage(element, app) {
     const pane = document.createElement('div');
     pane.className = 'terminal-pane';
     panes.append(pane);
+    const preferences = store.get().preferences;
     const term = new Terminal({
-      fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim() || 'monospace',
-      fontSize: store.get().preferences.terminalFontSize || 14,
+      fontFamily: fontFamily(preferences.terminalFont),
+      fontSize: preferences.terminalFontSize || 14,
+      lineHeight: 1.25,
+      fontWeightBold: 700,
       cursorBlink: true,
+      cursorStyle: 'bar',
+      cursorWidth: 2,
       scrollback: 10000,
       allowProposedApi: true,
       theme: terminalTheme(),
@@ -128,7 +166,10 @@ export function createTerminalPage(element, app) {
     term.loadAddon(fit);
     term.loadAddon(search);
     term.open(pane);
-    const tab = { id: uid('t'), hostId, term, fit, search, pane, status: 'connecting' };
+    const highlights = new SemanticHighlights(term, preferences.terminalHighlights !== false);
+    const tab = { id: uid('t'), hostId, term, fit, search, pane, highlights, status: 'connecting' };
+    // The bundled font may still be loading: re-measure once it is ready.
+    fontsReady.then(() => { term.options.fontFamily = fontFamily(store.get().preferences.terminalFont); fitTab(tab); });
     tabs.push(tab);
 
     term.onData(data => {
@@ -186,6 +227,7 @@ export function createTerminalPage(element, app) {
 
   function close(tab) {
     api.disconnect(tab.id).catch(() => {});
+    tab.highlights.dispose();
     tab.term.dispose();
     tab.pane.remove();
     const index = tabs.indexOf(tab);
@@ -254,11 +296,19 @@ export function createTerminalPage(element, app) {
   });
 
   new ResizeObserver(() => fitTab(active)).observe(panes);
-  new MutationObserver(() => { const theme = terminalTheme(); for (const t of tabs) t.term.options.theme = theme; })
+  new MutationObserver(() => { const theme = terminalTheme(); for (const t of tabs) { t.term.options.theme = theme; t.highlights.refreshColors(); } })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   store.subscribe(state => {
-    const size = state.preferences.terminalFontSize;
-    for (const t of tabs) if (size && t.term.options.fontSize !== size) { t.term.options.fontSize = size; fitTab(t); }
+    const { terminalFontSize: size, terminalFont, terminalHighlights } = state.preferences;
+    const family = fontFamily(terminalFont);
+    for (const t of tabs) {
+      if ((size && t.term.options.fontSize !== size) || t.term.options.fontFamily !== family) {
+        if (size) t.term.options.fontSize = size;
+        t.term.options.fontFamily = family;
+        fitTab(t);
+      }
+      if (t.highlights.enabled !== (terminalHighlights !== false)) t.highlights.setEnabled(terminalHighlights !== false);
+    }
     if (!tabs.length && !element.hidden) drawEmpty();
   });
 

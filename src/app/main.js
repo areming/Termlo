@@ -6,6 +6,7 @@ import { createTerminalPage } from './terminal.js';
 import { createFilesPage } from './files.js';
 import { createAssistantPage } from './assistant.js';
 import { createSettingsPage } from './settings.js';
+import { createTelemetry } from './telemetry.js';
 
 const PAGES = [
   { id: 'hosts', label: '主机', icon: 'host' },
@@ -26,6 +27,7 @@ const app = {
   on(type, handler) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(handler); },
   setPreferences,
 };
+app.telemetry = createTelemetry(app);
 
 // ---- shell ----------------------------------------------------------------------
 function renderShell() {
@@ -219,6 +221,7 @@ async function boot() {
   renderShell();
   const initial = await api.init();
   store.set({ hosts: initial.hosts, preferences: initial.preferences, version: initial.version });
+  for (const metrics of initial.metrics || []) app.telemetry.accept(metrics);
   applyTheme();
 
   pages.hosts = createHostsPage($('#view-hosts'), app);

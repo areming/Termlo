@@ -27,6 +27,11 @@ function build() {
   };
   for (const [target, source] of Object.entries(copies)) fs.copyFileSync(path.join(root, source), path.join(dist, target));
   fs.copyFileSync(require.resolve('@xterm/xterm/css/xterm.css'), path.join(dist, 'xterm.css'));
+  // Terminal font, bundled so it looks the same on every platform (SIL Open Font License).
+  const fonts = path.join(path.dirname(require.resolve('@fontsource/jetbrains-mono/package.json')), 'files');
+  fs.mkdirSync(path.join(dist, 'fonts'));
+  for (const weight of [400, 700]) fs.copyFileSync(path.join(fonts, `jetbrains-mono-latin-${weight}-normal.woff2`), path.join(dist, 'fonts', `jetbrains-mono-${weight}.woff2`));
+  fs.copyFileSync(path.join(fonts, '..', 'LICENSE'), path.join(dist, 'fonts', 'JetBrainsMono-OFL.txt'));
 }
 
 module.exports = { build };

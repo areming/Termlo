@@ -1,5 +1,6 @@
 // Settings: model, appearance, known hosts, about.
 import { api, html, raw, ico, render, $, on, confirm, toast, fail, message, selectable } from './ui.js';
+import { TERMINAL_FONTS } from './terminal.js';
 
 const PRESETS = [
   { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
@@ -78,6 +79,16 @@ export function createSettingsPage(element, app) {
                 <button class="btn btn-icon btn-sm" type="button" data-font="1" aria-label="增大终端字号" title="增大">${ico('plus', 'sm')}</button>
               </div>
             </div>
+            <div class="setting">
+              <label class="setting-text" for="s-font"><span>终端字体</span></label>
+              <span class="select-wrap"><select class="select" id="s-font">
+                ${Object.entries(TERMINAL_FONTS).map(([key, font]) => html`<option value="${key}" ${(preferences.terminalFont || 'jetbrains') === key ? raw('selected') : ''}>${font.label}</option>`)}
+              </select></span>
+            </div>
+            <div class="setting">
+              <label class="setting-text" for="s-highlights"><span>终端高亮</span><span class="text-xs text-muted">给命令、地址、路径、错误和警告上色</span></label>
+              <input class="switch" type="checkbox" role="switch" id="s-highlights" ${preferences.terminalHighlights !== false ? raw('checked') : ''}>
+            </div>
           </div>
         </section>
 
@@ -144,6 +155,10 @@ export function createSettingsPage(element, app) {
   on(element, 'click', '[data-font]', (_e, button) => {
     const size = (store.get().preferences.terminalFontSize || 14) + Number(button.dataset.font);
     if (size >= 11 && size <= 22) app.setPreferences({ terminalFontSize: size }).then(draw);
+  });
+  element.addEventListener('change', event => {
+    if (event.target.id === 's-font') app.setPreferences({ terminalFont: event.target.value });
+    if (event.target.id === 's-highlights') app.setPreferences({ terminalHighlights: event.target.checked });
   });
   on(element, 'click', '[data-forget]', async (_e, button) => {
     if (!(await confirm({ title: '删除这条指纹记录？', text: '下次连接这台服务器时需要重新确认它的身份。', action: '删除记录' }))) return;

@@ -149,5 +149,160 @@
 
 /* Live reasoning preview under 思考中… */
 .thinking-step { flex-wrap: wrap; row-gap: var(--sp-1); }
-.thinking-preview { flex-basis: 100%; min-width: 0; padding-left: calc(var(--icon-md) + var(--sp-2)); font-size: var(--text-xs); }
+.thinking-preview { flex-basis: 100%; min-width: 0; padding-left: calc(var(--icon-md) + var(--sp-2)); font-size: var(--fs-xs); }
 .thinking-preview:empty { display: none; }
+
+/* ======================================================================================
+   Visual 2.1 · "活的控制台" (product/visual-2.1.md)
+   The one bold element is live telemetry; the shell around it stays quiet.
+   ====================================================================================== */
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./fonts/jetbrains-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./fonts/jetbrains-mono-700.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+/* ---- shell ----------------------------------------------------------------------------- */
+.view:not([hidden]) { animation: view-in var(--dur-slow) var(--ease-out); }
+@keyframes view-in { from { opacity: 0; transform: translateY(var(--sp-1)); } }
+
+.rail { padding-top: var(--sp-4); }
+.rail-brand { margin-bottom: var(--sp-4); filter: drop-shadow(0 0 var(--sp-3) var(--accent-soft)); }
+.rail-item { position: relative; }
+.rail-item::before {
+  content: ""; position: absolute; left: calc(-1 * var(--sp-2)); top: 50%;
+  width: 3px; height: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--accent); transform: translateY(-50%);
+  transition: height var(--dur-slow) var(--ease-out);
+}
+.rail-item[aria-current="page"]::before { height: calc(var(--sp-6) - var(--sp-1)); }
+
+.page-title { align-items: center; }
+.online-count {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  padding: 2px var(--sp-2); border-radius: var(--r-sm);
+  background: var(--accent-soft); color: var(--accent-text);
+  font-size: var(--fs-xs); font-weight: var(--fw-strong); font-variant-numeric: tabular-nums;
+}
+.online-count .dot { background: var(--accent); animation: breathe 2400ms var(--ease-in-out) infinite; }
+
+/* ---- host cards -------------------------------------------------------------------- */
+.host-grid { grid-template-columns: repeat(auto-fill, minmax(calc(var(--sp-8) * 9), 1fr)); gap: var(--sp-4); }
+.host-card {
+  position: relative; display: flex; flex-direction: column; gap: var(--sp-3);
+  min-width: 0; padding: var(--sp-4);
+  border: var(--border) solid var(--line); border-radius: var(--r-md);
+  background: var(--panel-gradient); box-shadow: var(--edge-highlight);
+  transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-slow) var(--ease-out);
+}
+.host-card:hover, .host-card:focus-within { border-color: var(--line-strong); }
+.host-card[data-online="true"] {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  box-shadow: var(--edge-highlight), var(--glow-live);
+}
+.host-card-head { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
+.host-card-main { display: grid; flex: 1; min-width: 0; }
+.host-card-title { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-strong); line-height: var(--lh-tight); }
+.host-card-target { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-xs); }
+.host-os {
+  flex: none; max-width: 45%; padding: 2px var(--sp-2);
+  border: var(--border) solid var(--line); border-radius: var(--r-sm);
+  color: var(--muted); font-size: var(--fs-xs);
+}
+
+/* The heartbeat: hollow while offline, breathing while a connection is open. */
+.host-pulse {
+  position: relative; flex: none; width: 10px; height: 10px; margin-top: 5px;
+  border-radius: var(--r-round); box-shadow: inset 0 0 0 1.5px var(--line-strong);
+}
+.host-card[data-online="true"] .host-pulse { background: var(--accent); box-shadow: none; }
+.host-card[data-online="true"] .host-pulse::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--accent);
+  animation: ripple 2400ms var(--ease-out) infinite;
+}
+@keyframes ripple { 0% { transform: scale(1); opacity: 0.55; } 70%, 100% { transform: scale(2.8); opacity: 0; } }
+@keyframes breathe { 50% { opacity: 0.45; } }
+
+.host-idle { display: flex; flex: 1; flex-direction: column; justify-content: space-between; gap: var(--sp-3); min-height: calc(var(--sp-8) * 2); }
+.host-idle-action { display: flex; align-items: center; gap: var(--sp-3); margin-top: auto; }
+.host-facts { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.host-facts > span {
+  padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm);
+  background: var(--surface-inset); color: var(--text); font-size: var(--fs-xs); font-variant-numeric: tabular-nums;
+}
+.host-card-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-top: auto; padding-top: var(--sp-3); border-top: var(--border) solid var(--line); }
+.host-card .quick-actions { opacity: 1; position: relative; z-index: var(--z-raised); display: flex; gap: 2px; }
+.host-card .card-link::after { border-radius: var(--r-md); }
+
+/* ---- telemetry instruments ----------------------------------------------------------- */
+.host-telemetry { display: grid; gap: var(--sp-3); flex: 1; }
+.tm-chart { display: grid; gap: var(--sp-1); padding: var(--sp-3) var(--sp-3) 0; border-radius: var(--r-sm); background: var(--surface-inset); overflow: hidden; }
+.tm-chart-head { display: flex; align-items: baseline; gap: var(--sp-2); }
+.tm-key { color: var(--muted); font-size: var(--fs-xs); }
+.tm-big { font-size: var(--fs-xl); font-weight: var(--fw-strong); line-height: 1; font-variant-numeric: tabular-nums; color: var(--text); }
+.tm-aside { margin-left: auto; color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.tm-val { color: var(--text); font-size: var(--fs-xs); font-weight: var(--fw-strong); font-variant-numeric: tabular-nums; }
+.tm-note { margin: 0; color: var(--muted); font-size: var(--fs-xs); }
+[data-level="high"] > .tm-chart-head .tm-big, [data-level="high"] .tm-val { color: var(--warning); }
+[data-level="critical"] > .tm-chart-head .tm-big, [data-level="critical"] .tm-val { color: var(--danger); }
+
+.spark { display: block; width: 100%; height: 44px; overflow: visible; }
+.tm-plot { position: relative; }
+.tm-scale { position: absolute; top: 0; right: 0; color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; opacity: 0.8; }
+.spark-grid { stroke: var(--line); stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
+.spark-base { stroke: var(--line-strong); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.spark-line { fill: none; stroke: var(--data-cpu); stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.spark stop { stop-color: var(--data-cpu); }
+.spark-stop-top { stop-opacity: 0.32; }
+.spark-stop-bottom { stop-opacity: 0; }
+.spark-head { fill: var(--data-cpu); filter: drop-shadow(0 0 3px var(--data-cpu)); }
+[data-level="high"] .spark-line { stroke: var(--data-disk); }
+[data-level="high"] .spark stop { stop-color: var(--data-disk); }
+[data-level="high"] .spark-head { fill: var(--data-disk); }
+[data-level="critical"] .spark-line { stroke: var(--danger); }
+[data-level="critical"] .spark stop { stop-color: var(--danger); }
+[data-level="critical"] .spark-head { fill: var(--danger); }
+
+.tm-stats { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.tm-stat { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.tm-stat > span { display: grid; line-height: var(--lh-tight); }
+.tm-stat.tm-net { display: grid; gap: 2px; margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
+.ring { flex: none; width: 30px; height: 30px; }
+.ring-track { fill: none; stroke: var(--data-track); stroke-width: 4; }
+.ring-fill { fill: none; stroke-width: 4; stroke-linecap: round; }
+.ring[data-kind="mem"] .ring-fill { stroke: var(--data-mem); }
+.ring[data-kind="disk"] .ring-fill { stroke: var(--data-disk); }
+[data-level="critical"] .ring .ring-fill { stroke: var(--danger); }
+
+/* ---- terminal ----------------------------------------------------------------------- */
+.terminal-tabs { background: var(--sidebar-bg); }
+.terminal-tab[aria-selected="true"] { background: var(--terminal-bg); box-shadow: inset 0 2px 0 var(--accent); }
+.terminal-pane { padding: var(--sp-3) 0 var(--sp-2) var(--sp-4); }
+.terminal-status {
+  display: flex; align-items: center; gap: var(--sp-4); min-height: 30px; padding: 0 var(--sp-4);
+  border-top: var(--border) solid var(--line); background: var(--sidebar-bg);
+  font-size: var(--fs-xs); white-space: nowrap; overflow: hidden;
+}
+.terminal-status[hidden] { display: none; }
+.terminal-status-os { color: var(--muted); max-width: 22%; }
+.terminal-telemetry { display: flex; align-items: center; gap: var(--sp-4); margin-left: auto; min-width: 0; }
+.terminal-telemetry .tm-item { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.terminal-telemetry .spark { width: 96px; height: 18px; margin-right: var(--sp-1); }
+.terminal-telemetry .ring { width: 16px; height: 16px; }
+.terminal-telemetry .ring-track, .terminal-telemetry .ring-fill { stroke-width: 6; }
+.terminal-telemetry .tm-net .tm-key:not(:first-child) { margin-left: var(--sp-2); }
+
+@media (max-width: 1180px) {
+  .terminal-telemetry .tm-uptime, .terminal-status-os { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .host-card[data-online="true"] .host-pulse::after, .online-count .dot { animation: none; }
+}

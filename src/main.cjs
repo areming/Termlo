@@ -15,6 +15,7 @@ const { migrate } = require('./migrate.cjs');
 const { identityKey, probeInventory } = require('./host-os.cjs');
 const { resolveDataDir } = require('./data-dir.cjs');
 const atomicFile = require('./atomic-file.cjs');
+const { HostMonitor } = require('./host-monitor.cjs');
 
 app.setName('Termlo');
 const root = path.join(__dirname, '..');
@@ -51,7 +52,7 @@ function session(id) {
 }
 
 // ---- preferences (theme, terminal) ------------------------------------------
-const PREFERENCE_DEFAULTS = { theme: 'dark', terminalFontSize: 14, hostView: 'grid' };
+const PREFERENCE_DEFAULTS = { theme: 'dark', terminalFontSize: 14, terminalFont: 'jetbrains', terminalHighlights: true, hostView: 'grid' };
 function loadPreferences() {
   try { return { ...PREFERENCE_DEFAULTS, ...JSON.parse(fs.readFileSync(path.join(dataPath, 'preferences.json'), 'utf8')) }; }
   catch { return { ...PREFERENCE_DEFAULTS }; }
@@ -61,6 +62,8 @@ function savePreferences(input) {
   if (['dark', 'light'].includes(input.theme)) next.theme = input.theme;
   if (Number.isInteger(input.terminalFontSize) && input.terminalFontSize >= 11 && input.terminalFontSize <= 22) next.terminalFontSize = input.terminalFontSize;
   if (['grid', 'list'].includes(input.hostView)) next.hostView = input.hostView;
+  if (['jetbrains', 'cascadia', 'system'].includes(input.terminalFont)) next.terminalFont = input.terminalFont;
+  if (typeof input.terminalHighlights === 'boolean') next.terminalHighlights = input.terminalHighlights;
   const file = path.join(dataPath, 'preferences.json');
   const temporary = `${file}.${randomUUID()}.tmp`;
   fs.writeFileSync(temporary, JSON.stringify(next, null, 2), { mode: 0o600 });
@@ -96,7 +99,10 @@ function credentialsFor(route, supplied = {}) {
 
 // Learn the OS of a host once connected (shown on host cards, given to the assistant).
 const probed = new Map();
+// Live metrics ride on connections the user opened (terminal / files); the assistant's have no kind.
+const monitor = new HostMonitor({ notify: message => send(message) });
 SSHSession.observe = (hostId, ssh) => {
+  if (ssh.kind) monitor.attach(hostId, ssh);
   let key;
   try { key = identityKey(store.get(hostId)); } catch { return; }
   if (Date.now() - (probed.get(hostId + key) || 0) < 60000) return;
@@ -177,6 +183,7 @@ function installHandlers() {
     migration,
     platform: process.platform,
     version: app.getVersion(),
+    metrics: monitor.snapshot(),
   }));
   handle('savePreferences', input => savePreferences(input || {}));
   handle('answerPrompt', (id, response) => prompts.answer(id, response));
@@ -363,6 +370,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
+  monitor.close();
   agent?.close();
   for (const ssh of connections.values()) ssh.close();
 });

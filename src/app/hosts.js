@@ -1,5 +1,6 @@
 // Hosts: grouped cards or list, quick actions, add/edit, ~/.ssh/config import.
-import { api, html, raw, ico, render, $, $$, on, dialog, confirm, toast, fail, menu, selectable } from './ui.js';
+import { api, html, raw, ico, render, $, $$, on, dialog, confirm, toast, fail, menu, selectable, bytes } from './ui.js';
+import { view } from './telemetry.js';
 
 const OS_LABEL = host => host.operatingSystem?.name || '';
 
@@ -7,9 +8,10 @@ export function createHostsPage(element, app) {
   const { store } = app;
   let group = '全部';
   let query = '';
+  let shownOnline = new Set();   // hosts drawn as online in the last render
 
   function connectedIds() {
-    return new Set((store.get().sessions || []).filter(s => s.status === 'ready').map(s => s.hostId));
+    return new Set(store.get().hosts.map(h => h.id).filter(id => app.telemetry.online(id)));
   }
 
   function groups(hosts) {
@@ -26,31 +28,54 @@ export function createHostsPage(element, app) {
       .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
   }
 
-  function card(host, connected) {
+  // Hardware facts learned on a previous connection, shown while a host is offline.
+  function specs(host) {
+    const s = host.specifications || {};
+    const parts = [
+      s.cpuCount ? `${s.cpuCount} 核` : '',
+      s.memoryTotal ? `${bytes(s.memoryTotal)} 内存` : '',
+      s.rootTotal ? `${bytes(s.rootTotal)} 磁盘` : '',
+    ].filter(Boolean);
+    return parts;
+  }
+
+  function card(host, online) {
     const target = `${host.username}@${host.address}${host.port !== 22 ? ':' + host.port : ''}`;
     const jump = host.jumpHostId ? app.hostLabel(host.jumpHostId) : '';
+    const facts = specs(host);
+    const telemetry = app.telemetry;
     return html`
-      <article class="card card-interactive host-card" data-host="${host.id}">
-        <div class="card-header">
-          <span class="avatar ${connected ? 'avatar-accent' : ''}">${ico('host')}</span>
+      <article class="host-card" data-host="${host.id}" data-online="${online}">
+        <header class="host-card-head">
+          <span class="host-pulse" aria-hidden="true"></span>
           <div class="host-card-main">
-            <h3 class="card-title truncate"><a class="card-link" href="#terminal" data-action="terminal" title="打开终端">${host.name}</a></h3>
-            <p class="card-meta mono truncate" translate="no">${target}</p>
+            <h3 class="host-card-title truncate"><a class="card-link" href="#terminal" data-action="terminal" title="打开终端">${host.name}</a></h3>
+            <p class="host-card-target mono truncate" translate="no">${target}</p>
           </div>
-          ${connected ? html`<span class="status" data-state="connected"><span class="dot"></span>已连接</span>` : ''}
-        </div>
-        <div class="card-footer host-card-footer">
+          ${OS_LABEL(host) ? html`<span class="host-os truncate" title="${OS_LABEL(host)}">${OS_LABEL(host).replace(/ LTS$/, '')}</span>` : ''}
+        </header>
+        ${online
+          ? html`<div class="host-telemetry" data-telemetry="${host.id}" data-variant="card">${view('card', telemetry.get(host.id), telemetry.history(host.id))}</div>`
+          : html`<div class="host-idle">
+              ${facts.length ? html`<span class="host-facts">${facts.map(f => html`<span>${f}</span>`)}</span>` : ''}
+              <div class="host-idle-action">
+                <button class="btn btn-sm" type="button" data-action="terminal">${ico('terminal', 'sm')}连接</button>
+                <span class="text-xs text-muted">连接后显示实时状态</span>
+              </div>
+            </div>`}
+        <footer class="host-card-foot">
           <div class="host-badges">
-            ${OS_LABEL(host) ? html`<span class="badge">${OS_LABEL(host)}</span>` : ''}
+            ${online ? html`<span class="status" data-state="connected"><span class="dot"></span>在线</span>` : ''}
             ${jump ? html`<span class="badge badge-outline" title="经由跳板机连接">经 ${jump}</span>` : ''}
             ${host.auth === 'key' ? html`<span class="badge badge-outline">${ico('key', 'sm')}密钥</span>` : ''}
           </div>
           <div class="quick-actions">
+            <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="terminal" aria-label="打开终端" title="打开终端">${ico('terminal', 'sm')}</button>
             <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="files" aria-label="浏览文件" title="浏览文件">${ico('folder', 'sm')}</button>
             <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="assistant" aria-label="交给助手" title="交给助手">${ico('assistant', 'sm')}</button>
             <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="more" aria-label="更多操作" title="更多操作">${ico('more', 'sm')}</button>
           </div>
-        </div>
+        </footer>
       </article>`;
   }
 
@@ -90,15 +115,16 @@ export function createHostsPage(element, app) {
         </div>`);
       return;
     }
+    const connected = connectedIds();
+    shownOnline = connected;
     const groupList = groups(hosts);
     if (group !== '全部' && !groupList.some(([name]) => name === group)) group = '全部';
     const list = visible(hosts);
-    const connected = connectedIds();
     const focused = document.activeElement?.id === 'host-filter';
     render(element, html`
       <div class="page">
         <div class="page-header">
-          <h2 class="page-title">主机<span class="count">${hosts.length} 台</span></h2>
+          <h2 class="page-title">主机<span class="count">${hosts.length} 台</span>${connected.size ? html`<span class="online-count"><span class="dot"></span>${connected.size} 台在线</span>` : ''}</h2>
           <div class="input-group host-filter">${ico('search', 'sm')}<input class="input" id="host-filter" type="search" value="${query}" placeholder="筛选主机…" aria-label="筛选主机" autocomplete="off"></div>
           <div class="segmented" role="radiogroup" aria-label="显示方式" id="host-view">
             <button type="button" role="radio" data-view="grid" aria-checked="${view === 'grid'}" aria-label="卡片" title="卡片">${ico('view-grid', 'sm')}</button>
@@ -356,6 +382,12 @@ export function createHostsPage(element, app) {
     if (event.target.id === 'host-filter') { query = event.target.value; draw(); }
   });
   store.subscribe(() => { if (!element.hidden) draw(); });
+  // A host going online or offline changes the card's shape; a new sample only patches numbers.
+  app.telemetry.subscribe(hostId => {
+    if (element.hidden) return;
+    if (app.telemetry.online(hostId) !== shownOnline.has(hostId)) return draw();
+    app.telemetry.patch(element, hostId);
+  });
 
   return {
     show(params) {

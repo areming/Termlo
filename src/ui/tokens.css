@@ -12,45 +12,76 @@
   color-scheme: dark;
 
   /* ── Surfaces ─────────────────────────────────────────── */
-  --bg: #181a1f;               /* app background */
-  --sidebar-bg: #131519;       /* nav rail */
-  --panel: #202329;            /* cards, panels */
-  --surface-raised: #262c35;   /* buttons, popovers */
-  --surface-inset: #141a21;    /* input interiors, code blocks */
-  --hover: #303640;            /* hover fill */
-  --scrim: #0a0c0fa3;          /* dialog backdrop */
+  --bg: #0f131a;               /* app background */
+  --sidebar-bg: #0b0e14;       /* nav rail */
+  --panel: #161c25;            /* cards, panels */
+  --surface-raised: #1e2531;   /* buttons, popovers */
+  --surface-inset: #0c1016;    /* input interiors, code blocks */
+  --hover: #263040;            /* hover fill */
+  --scrim: #05070aa8;          /* dialog backdrop */
 
   /* ── Lines ────────────────────────────────────────────── */
-  --line: #30343d;
-  --line-strong: #505966;
+  --line: #242c39;
+  --line-strong: #3d4a5d;
 
   /* ── Text ─────────────────────────────────────────────── */
-  --text: #e3e6ed;
-  --muted: #969eac;            /* ≥ 4.5:1 on bg, panel and surface-raised */
+  --text: #e6ebf3;
+  --muted: #929eb0;            /* ≥ 4.5:1 on bg, panel and surface-raised */
 
   /* ── Accent (mint) ────────────────────────────────────── */
-  --accent: #90d5c4;
-  --accent-hover: #a8e1d3;
-  --accent-ink: #153c33;       /* text on solid accent */
-  --accent-soft: #90d5c41f;    /* selected backgrounds */
-  --accent-text: #90d5c4;      /* accent used as text, incl. on accent-soft */
+  --accent: #7fe0c6;
+  --accent-hover: #a0ecd8;
+  --accent-ink: #0b3a2f;       /* text on solid accent */
+  --accent-soft: #7fe0c61f;    /* selected backgrounds */
+  --accent-text: #7fe0c6;      /* accent used as text, incl. on accent-soft */
 
   /* ── Semantic status ──────────────────────────────────── */
-  --success: #8fd19e;
+  --success: #8ad9a0;
   --success-soft: #8fd19e1f;
-  --warning: #e8c37a;
-  --warning-soft: #e8c37a1f;
-  --danger: #eaa1a1;
+  --warning: #f2c46d;
+  --warning-soft: #f2c46d1f;
+  --danger: #f0a0a3;
   --danger-hover: #f0b6b6;
   --danger-ink: #3d1519;       /* text on solid danger */
   --danger-soft: #eaa1a11f;
-  --info: #9cc4f0;
-  --info-soft: #9cc4f01f;
+  --info: #6cc7f0;
+  --info-soft: #6cc7f01f;
+
+  /* ── Data (live metrics only, never decoration) ────────── */
+  --data-cpu: #7fe0c6;
+  --data-mem: #a3afff;
+  --data-disk: #f2c46d;
+  --data-net: #6cc7f0;
+  --data-track: #ffffff12;     /* empty part of rings and bars */
+
+  /* ── Depth: a faint top highlight instead of shadows ───── */
+  --edge-highlight: inset 0 1px 0 #ffffff0d;
+  --glow-live: 0 0 0 1px #7fe0c62e, 0 12px 32px -16px #7fe0c659;
+  --panel-gradient: linear-gradient(180deg, #1a212c 0%, #161c25 64%);
 
   /* ── Terminal ─────────────────────────────────────────── */
-  --terminal-bg: #0e1216;
-  --terminal-text: #d7dde6;
-  --terminal-muted: #8a94a3;
+  --terminal-bg: #0a0e14;
+  --terminal-text: #d9e0ea;
+  --terminal-muted: #7f8b9c;
+  --terminal-selection: #2c4a5a;
+  --ansi-black: #1b2230;   --ansi-bright-black: #5f6c80;
+  --ansi-red: #f2878f;     --ansi-bright-red: #ffa8ad;
+  --ansi-green: #8fe0a8;   --ansi-bright-green: #b5f0c6;
+  --ansi-yellow: #f2c46d;  --ansi-bright-yellow: #ffd98f;
+  --ansi-blue: #7fb4ff;    --ansi-bright-blue: #a8cbff;
+  --ansi-magenta: #c8a2ff; --ansi-bright-magenta: #dcc2ff;
+  --ansi-cyan: #6fd8d0;    --ansi-bright-cyan: #9eeae3;
+  --ansi-white: #d9e0ea;   --ansi-bright-white: #f5f8fc;
+  /* Semantic highlights drawn over plain terminal text */
+  --hl-prompt: #7fe0c6;
+  --hl-cwd: #7fb4ff;
+  --hl-network: #7fb4ff;
+  --hl-path: #6fd8d0;
+  --hl-command: #8fe0a8;
+  --hl-option: #c8a2ff;
+  --hl-error: #ff8d94;
+  --hl-warning: #f2c46d;
+  --hl-success: #8fe0a8;
 
   /* ── Elevation (floating layers only; cards never get shadows) ── */
   --shadow-popover: 0 8px 24px #00000066, 0 0 0 1px #00000033;
@@ -83,8 +114,8 @@
 
   /* ── Radius (three levels; --r-round is for true circles only) ── */
   --r-sm: 6px;                 /* buttons, inputs, badges */
-  --r-md: 8px;                 /* cards, panels, menus */
-  --r-lg: 12px;                /* dialogs, large panels */
+  --r-md: 10px;                /* cards, panels, menus */
+  --r-lg: 14px;               /* dialogs, large panels */
   --r-round: 50%;              /* status dots, spinners, switch thumb */
 
   /* ── Control sizes ────────────────────────────────────── */
@@ -141,25 +172,25 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg: #f3f5f7;
-  --sidebar-bg: #e9edf1;
+  --bg: #eef2f6;
+  --sidebar-bg: #e3e9f0;
   --panel: #ffffff;
   --surface-raised: #f0f4f7;
   --surface-inset: #f7f9fb;
   --hover: #e3eaf0;
   --scrim: #1a2a3a52;
 
-  --line: #d4dce3;
-  --line-strong: #b8c7d2;
+  --line: #d3dbe4;
+  --line-strong: #adbccb;
 
-  --text: #233441;
-  --muted: #5c6d7c;
+  --text: #1c2b3a;
+  --muted: #566779;
 
-  --accent: #147d68;
-  --accent-hover: #0f6a58;
+  --accent: #0f7f69;
+  --accent-hover: #0b6956;
   --accent-ink: #ffffff;
-  --accent-soft: #dceee8;
-  --accent-text: #0f6655;
+  --accent-soft: #d6efe8;
+  --accent-text: #0b6352;
 
   --success: #276d45;
   --success-soft: #dff0e5;
@@ -169,12 +200,40 @@
   --danger-hover: #9e2a37;
   --danger-ink: #ffffff;
   --danger-soft: #f7e1e3;
-  --info: #2a63a1;
+  --info: #1f65a8;
   --info-soft: #e0ebf7;
 
-  --terminal-bg: #f8fafb;
-  --terminal-text: #233441;
+  --terminal-bg: #fbfcfd;
+  --terminal-text: #1f2d3b;
   --terminal-muted: #5c6d7c;
+  --terminal-selection: #cfe5f0;
+  --ansi-black: #2b3644;   --ansi-bright-black: #6b7a8b;
+  --ansi-red: #c22f3e;     --ansi-bright-red: #d9424f;
+  --ansi-green: #1d7a3e;   --ansi-bright-green: #278a4b;
+  --ansi-yellow: #8a5a00;  --ansi-bright-yellow: #9c6800;
+  --ansi-blue: #1f5fbf;    --ansi-bright-blue: #2f72d4;
+  --ansi-magenta: #7a3fb5; --ansi-bright-magenta: #8d52c8;
+  --ansi-cyan: #0c7a78;    --ansi-bright-cyan: #138c89;
+  --ansi-white: #5a6878;   --ansi-bright-white: #1c2b3a;
+  --hl-prompt: #0f7f69;
+  --hl-cwd: #1f5fbf;
+  --hl-network: #1f5fbf;
+  --hl-path: #0c7a78;
+  --hl-command: #1d7a3e;
+  --hl-option: #7a3fb5;
+  --hl-error: #c22f3e;
+  --hl-warning: #8a5a00;
+  --hl-success: #1d7a3e;
+
+  --data-cpu: #0f8f75;
+  --data-mem: #5a63d6;
+  --data-disk: #b07a10;
+  --data-net: #1f7fb8;
+  --data-track: #1c2b3a14;
+
+  --edge-highlight: inset 0 1px 0 #ffffff;
+  --glow-live: 0 0 0 1px #0f7f6933, 0 12px 28px -18px #0f7f6966;
+  --panel-gradient: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
 
   --shadow-popover: 0 8px 24px #1a2a3a24, 0 0 0 1px #1a2a3a14;
   --shadow-dialog: 0 24px 64px #1a2a3a33, 0 0 0 1px #1a2a3a14;
