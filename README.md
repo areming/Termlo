@@ -43,6 +43,6 @@ npm start
 
 - 打包：`npm run dist:win` / `npm run dist:mac`（需在对应系统上运行）。推送 `v*` 标签后，GitHub Actions 会构建三个平台的安装包，并以 `RELEASE_NOTES.md` 作为 Release 说明发布。
 - 助手基准：`node scripts/bench.cjs`，用真实模型在一台可丢弃的服务器上跑部署和修复任务，结果由服务器上的检查命令判定。配置写在 `~/.config/termlo/bench.env`，不要用生产服务器。
-- 为兼容旧数据，本地数据目录仍为 `Termus`。
+- 本地数据目录为 `Termlo`（2.0.1 及更早版本的 `Termus` 目录会在首次启动时整体改名过来）。
 
 本仓库尚未选择开源许可证。

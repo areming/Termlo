@@ -11,7 +11,7 @@ const { startFixture } = require('./fixture.cjs');
 const base = { name: 'Test', address: '127.0.0.1', port: 22, username: 'tester', auth: 'password', group: 'Test' };
 const key = randomBytes(32), iv = randomBytes(16);
 const vault = { isEncryptionAvailable: () => true, encryptString(text) { const c = createCipheriv('aes-256-cbc', key, iv); return Buffer.concat([c.update(text), c.final()]); }, decryptString(bytes) { const c = createDecipheriv('aes-256-cbc', key, iv); return Buffer.concat([c.update(bytes), c.final()]).toString(); } };
-function temp(t) { const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'termus-test-')); t.after(() => fs.rmSync(folder, { recursive: true, force: true })); return folder; }
+function temp(t) { const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'termlo-test-')); t.after(() => fs.rmSync(folder, { recursive: true, force: true })); return folder; }
 test('host persistence, encrypted password, endpoint change and fingerprint storage', t => {
   const folder = temp(t); const store = new Store(folder, vault);
   store.save({ ...base, password: 'secret-value', rememberPassword: true });

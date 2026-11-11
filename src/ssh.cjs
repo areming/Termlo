@@ -183,11 +183,11 @@ class SSHSession extends EventEmitter {
         callback(null, chunk);
       } });
       if (direction === 'upload') {
-        temporary = remote + '.termus-' + randomUUID() + '.part';
+        temporary = remote + '.termlo-' + randomUUID() + '.part';
         await pipeline(fs.createReadStream(local), meter, sftp.createWriteStream(temporary, { flags: 'wx', mode: 0o600 }));
         await call(sftp, 'rename', temporary, remote);
       } else {
-        temporary = local + '.termus-' + randomUUID() + '.part';
+        temporary = local + '.termlo-' + randomUUID() + '.part';
         await pipeline(sftp.createReadStream(remote), meter, fs.createWriteStream(temporary, { flags: 'wx', mode: 0o600 }));
         await require('./atomic-file.cjs').rename(temporary, local);
       }

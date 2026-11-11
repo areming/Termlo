@@ -51,7 +51,7 @@ async function main() {
   };
 
   try {
-    const env = { ...process.env, TERMUS_DATA_DIR: path.join(run, 'data') };
+    const env = { ...process.env, TERMLO_DATA_DIR: path.join(run, 'data') };
     delete env.ELECTRON_RUN_AS_NODE;
     const pkg = require('../package.json');
     const executable = { win32: 'win-unpacked/Termlo.exe', darwin: 'mac/Termlo.app/Contents/MacOS/Termlo' }[process.platform];
@@ -86,7 +86,7 @@ async function main() {
     await step('terminal connects after trusting the host key', async () => {
       await page.getByRole('link', { name: 'fixture-web' }).click();
       await page.getByRole('button', { name: '信任并连接' }).click();
-      await page.locator('.xterm-rows').filter({ hasText: 'Termus test server' }).waitFor({ timeout: 15000 });
+      await page.locator('.xterm-rows').filter({ hasText: 'Termlo test server' }).waitFor({ timeout: 15000 });
       await page.locator('.xterm-helper-textarea').focus();
       await page.keyboard.type('hello');
       await page.keyboard.press('Enter');

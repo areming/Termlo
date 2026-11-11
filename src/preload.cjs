@@ -13,13 +13,13 @@ const methods = [
   'agentPickAttachments', 'agentAddAttachments', 'agentDropAttachment',
 ];
 
-const api = Object.fromEntries(methods.map(name => [name, (...args) => ipcRenderer.invoke('termus:' + name, ...args)]));
-api.write = (id, data) => ipcRenderer.send('termus:write', id, data);
+const api = Object.fromEntries(methods.map(name => [name, (...args) => ipcRenderer.invoke('termlo:' + name, ...args)]));
+api.write = (id, data) => ipcRenderer.send('termlo:write', id, data);
 api.pathForFile = file => webUtils.getPathForFile(file);
 api.onEvent = callback => {
   const handler = (_event, message) => callback(message);
-  ipcRenderer.on('termus:event', handler);
-  return () => ipcRenderer.removeListener('termus:event', handler);
+  ipcRenderer.on('termlo:event', handler);
+  return () => ipcRenderer.removeListener('termlo:event', handler);
 };
 
 contextBridge.exposeInMainWorld('termlo', api);

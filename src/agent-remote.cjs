@@ -82,7 +82,7 @@ class AgentRemote {
     if(typeof directory!=='string'||!directory.startsWith('/')||directory.length>3500||/[\x00-\x1f\x7f]/.test(directory))throw new Error('暂存父目录必须是有效绝对路径');
     return this.bounded(hostId,async()=>{
       const {sftp}=await this.file(hostId,directory);
-      const folder=posix.join(directory,'termus-'+randomUUID());
+      const folder=posix.join(directory,'termlo-'+randomUUID());
       const filename=posix.join(folder,'payload'+(item.name.match(/(?:\.[a-zA-Z0-9]{1,10}){1,2}$/)?.[0]||''));
       const staging={id:randomUUID(),hostId,attachmentId:item.id,folder,path:filename,sha256:item.sha256,state:'prepared'};
       if(this.recoveryId)this.onStagingChange(staging);
@@ -121,14 +121,14 @@ class AgentRemote {
       catch (error) { if (error.code !== 2) throw error; }
       if (previous ? previous.sha256 !== expectedSha256 : expectedSha256 !== 'missing') throw new Error('文件内容已变化或过大，请重新读取，不能按旧内容覆盖');
       const write = (file,text,flags) => new Promise((resolve,reject) => { const stream = sftp.createWriteStream(file,{ flags, mode }); stream.on('error',reject); stream.on('close',resolve); stream.end(text); });
-      const recoveryDirectory=this.recoveryId?'/tmp/termus-recovery-'+this.recoveryId:null;
+      const recoveryDirectory=this.recoveryId?'/tmp/termlo-recovery-'+this.recoveryId:null;
       if(recoveryDirectory){try{await call(sftp,'mkdir',recoveryDirectory,{mode:0o700});}catch(e){const stat=await call(sftp,'lstat',recoveryDirectory);if(!stat.isDirectory())throw new Error('任务恢复目录不安全');}await call(sftp,'chmod',recoveryDirectory,0o700);}
-      const backup = previous ? recoveryDirectory?posix.join(recoveryDirectory,hash(filename)+'-'+randomUUID()+'.original'):filename+'.termus-backup-'+randomUUID() : null;
+      const backup = previous ? recoveryDirectory?posix.join(recoveryDirectory,hash(filename)+'-'+randomUUID()+'.original'):filename+'.termlo-backup-'+randomUUID() : null;
       if (backup) await write(backup,previous.content,'wx');
       const record={id:randomUUID(),hostId,path:filename,backup,sha256:hash(content),bytes:Buffer.byteLength(content),recovery:recoveryDirectory?{directory:recoveryDirectory,backup,existed:!!previous,originalSha256:previous?.sha256||null,mode}:undefined};
       if(recoveryDirectory)this.onFileChange({...record,state:'prepared'});
       // Exclusive temporary file; standard SFTP rename is used after a checked read.
-      const temporary = filename+'.termus-'+randomUUID()+'.tmp';
+      const temporary = filename+'.termlo-'+randomUUID()+'.tmp';
       try {
         await write(temporary,content,'wx');
         if (previous && typeof sftp.ext_openssh_rename === 'function') {
@@ -140,13 +140,15 @@ class AgentRemote {
       } finally { await call(sftp,'unlink',temporary).catch(() => {}); }
     });
   }
+  // A recovery directory belongs to this task under the current name or the pre-2.0.2 one.
+  ownRecoveryDirectory(directory){return !!this.recoveryId&&(directory==='/tmp/termlo-recovery-'+this.recoveryId||directory==='/tmp/termus-recovery-'+this.recoveryId);}
   async undoWrite(record){
-    const {hostId,path:filename,sha256,recovery:r}=record;if(!this.recoveryId||r?.directory!=='/tmp/termus-recovery-'+this.recoveryId||r.backup&&!r.backup.startsWith(r.directory+'/'))throw new Error('撤销记录无效');
-    return this.bounded(hostId,async()=>{const {sftp}=await this.file(hostId,filename);let current;try{current=await this.readFile(hostId,filename);}catch(error){if(error.code===2&&!r.existed)return {hostId,path:filename,restored:true,verified:true};throw error;}if(r.existed&&current.sha256===r.originalSha256)return {hostId,path:filename,restored:true,verified:true};if(current.sha256!==sha256)throw new Error('文件在任务之后发生变化，未覆盖：'+filename);if(r.existed){const original=await this.readFile(hostId,r.backup);if(original.sha256!==r.originalSha256)throw new Error('原文件材料校验失败');const temporary=filename+'.termus-undo-'+randomUUID()+'.tmp';try{await new Promise((resolve,reject)=>{const stream=sftp.createWriteStream(temporary,{flags:'wx',mode:r.mode});stream.on('error',reject);stream.on('close',resolve);stream.end(original.content);});if(typeof sftp.ext_openssh_rename!=='function')throw new Error('服务器不支持原子恢复');await call(sftp,'ext_openssh_rename',temporary,filename);await call(sftp,'chmod',filename,r.mode);}finally{await call(sftp,'unlink',temporary).catch(()=>{});}const verified=await this.readFile(hostId,filename);if(verified.sha256!==r.originalSha256)throw new Error('恢复后文件哈希校验失败');}else{await call(sftp,'unlink',filename);try{await call(sftp,'lstat',filename);throw new Error('撤销后文件仍存在');}catch(error){if(error.code!==2)throw error;}}return {hostId,path:filename,restored:true,verified:true};});
+    const {hostId,path:filename,sha256,recovery:r}=record;if(!this.recoveryId||!this.ownRecoveryDirectory(r?.directory)||r.backup&&!r.backup.startsWith(r.directory+'/'))throw new Error('撤销记录无效');
+    return this.bounded(hostId,async()=>{const {sftp}=await this.file(hostId,filename);let current;try{current=await this.readFile(hostId,filename);}catch(error){if(error.code===2&&!r.existed)return {hostId,path:filename,restored:true,verified:true};throw error;}if(r.existed&&current.sha256===r.originalSha256)return {hostId,path:filename,restored:true,verified:true};if(current.sha256!==sha256)throw new Error('文件在任务之后发生变化，未覆盖：'+filename);if(r.existed){const original=await this.readFile(hostId,r.backup);if(original.sha256!==r.originalSha256)throw new Error('原文件材料校验失败');const temporary=filename+'.termlo-undo-'+randomUUID()+'.tmp';try{await new Promise((resolve,reject)=>{const stream=sftp.createWriteStream(temporary,{flags:'wx',mode:r.mode});stream.on('error',reject);stream.on('close',resolve);stream.end(original.content);});if(typeof sftp.ext_openssh_rename!=='function')throw new Error('服务器不支持原子恢复');await call(sftp,'ext_openssh_rename',temporary,filename);await call(sftp,'chmod',filename,r.mode);}finally{await call(sftp,'unlink',temporary).catch(()=>{});}const verified=await this.readFile(hostId,filename);if(verified.sha256!==r.originalSha256)throw new Error('恢复后文件哈希校验失败');}else{await call(sftp,'unlink',filename);try{await call(sftp,'lstat',filename);throw new Error('撤销后文件仍存在');}catch(error){if(error.code!==2)throw error;}}return {hostId,path:filename,restored:true,verified:true};});
   }
-  async cleanRecovery(records){for(const record of records){const r=record.recovery;if(!r||!this.recoveryId||r.directory!=='/tmp/termus-recovery-'+this.recoveryId)throw new Error('清理记录无效');await this.bounded(record.hostId,async()=>{const {sftp}=await this.file(record.hostId,r.directory);if(r.backup){if(posix.dirname(r.backup)!==r.directory)throw new Error('清理路径不属于本任务');await call(sftp,'unlink',r.backup).catch(e=>{if(e.code!==2)throw e;});}await call(sftp,'rmdir',r.directory).catch(e=>{if(e.code!==2&&e.code!==4)throw e;});});}return {cleaned:true};}
+  async cleanRecovery(records){for(const record of records){const r=record.recovery;if(!r||!this.recoveryId||!this.ownRecoveryDirectory(r.directory))throw new Error('清理记录无效');await this.bounded(record.hostId,async()=>{const {sftp}=await this.file(record.hostId,r.directory);if(r.backup){if(posix.dirname(r.backup)!==r.directory)throw new Error('清理路径不属于本任务');await call(sftp,'unlink',r.backup).catch(e=>{if(e.code!==2)throw e;});}await call(sftp,'rmdir',r.directory).catch(e=>{if(e.code!==2&&e.code!==4)throw e;});});}return {cleaned:true};}
   async cleanStaging(record){
-    if(!this.recoveryId||!record||!this.routes.has(record.hostId)||!/^(?:\/[^\x00-\x1f]*)?\/termus-[a-f0-9-]{36}$/.test(record.folder)||posix.dirname(record.path)!==record.folder||!/^payload(?:\.[a-zA-Z0-9]{1,10}){0,2}$/.test(posix.basename(record.path)))throw new Error('附件暂存记录无效');
+    if(!this.recoveryId||!record||!this.routes.has(record.hostId)||!/^(?:\/[^\x00-\x1f]*)?\/term(?:lo|us)-[a-f0-9-]{36}$/.test(record.folder)||posix.dirname(record.path)!==record.folder||!/^payload(?:\.[a-zA-Z0-9]{1,10}){0,2}$/.test(posix.basename(record.path)))throw new Error('附件暂存记录无效');
     return this.bounded(record.hostId,async()=>{const {sftp}=await this.file(record.hostId,record.folder);
       let folder;try{folder=await call(sftp,'lstat',record.folder);}catch(e){if(e.code===2)return {cleaned:true};throw e;}
       if(!folder.isDirectory())throw new Error('暂存目录已变化，拒绝清理');

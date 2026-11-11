@@ -63,8 +63,8 @@ const SCENARIOS = {
     title: '中途停止后撤销文件改动',
     interrupt: 'undo',
     prompt: '用修改文件的方式，把 /srv/termlo-bench/s5/site.conf 里的 server_name 改成 new.example.com。',
-    setup: 'rm -rf /tmp/termus-recovery-* /srv/termlo-bench/s5 && mkdir -p /srv/termlo-bench/s5 && printf "server {\\n  server_name old.example.com;\\n}\\n" > /srv/termlo-bench/s5/site.conf && sha256sum /srv/termlo-bench/s5/site.conf > /tmp/termlo-bench-s5.sha',
-    check: 'sha256sum -c --quiet /tmp/termlo-bench-s5.sha && ! ls -d /tmp/termus-recovery-* >/dev/null 2>&1 && echo BENCH_PASS',
+    setup: 'rm -rf /tmp/term*-recovery-* /srv/termlo-bench/s5 && mkdir -p /srv/termlo-bench/s5 && printf "server {\\n  server_name old.example.com;\\n}\\n" > /srv/termlo-bench/s5/site.conf && sha256sum /srv/termlo-bench/s5/site.conf > /tmp/termlo-bench-s5.sha',
+    check: 'sha256sum -c --quiet /tmp/termlo-bench-s5.sha && ! ls -d /tmp/term*-recovery-* >/dev/null 2>&1 && echo BENCH_PASS',
     cleanup: 'rm -rf /srv/termlo-bench /tmp/termlo-bench-s5.sha; true',
   },
   // Clean and delete: the change stays, the undo backup on the server is removed.
@@ -72,8 +72,8 @@ const SCENARIOS = {
     title: '中途停止后清理并删除任务',
     interrupt: 'clean',
     prompt: '用修改文件的方式，把 /srv/termlo-bench/s6/site.conf 里的 server_name 改成 new.example.com。',
-    setup: 'rm -rf /tmp/termus-recovery-* /srv/termlo-bench/s6 && mkdir -p /srv/termlo-bench/s6 && printf "server {\\n  server_name old.example.com;\\n}\\n" > /srv/termlo-bench/s6/site.conf',
-    check: 'grep -q "server_name new.example.com;" /srv/termlo-bench/s6/site.conf && ! ls -d /tmp/termus-recovery-* >/dev/null 2>&1 && echo BENCH_PASS',
+    setup: 'rm -rf /tmp/term*-recovery-* /srv/termlo-bench/s6 && mkdir -p /srv/termlo-bench/s6 && printf "server {\\n  server_name old.example.com;\\n}\\n" > /srv/termlo-bench/s6/site.conf',
+    check: 'grep -q "server_name new.example.com;" /srv/termlo-bench/s6/site.conf && ! ls -d /tmp/term*-recovery-* >/dev/null 2>&1 && echo BENCH_PASS',
     cleanup: 'rm -rf /srv/termlo-bench; true',
   },
 };

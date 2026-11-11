@@ -1,15 +1,11 @@
-# Termlo 2.0.1
+# Termlo 2.0.2
 
-- **Fixed**: in the host list view, clicking anywhere on the page opened a terminal. Row actions are now always visible.
-- **Groups**: rename a group (renaming to an existing name merges them) or ungroup it from the group bar; move a host with "Move to group…".
-- **Settings** has a safety section: what the assistant can do, what is sent to the model, what can be undone and where secrets are kept.
-- **Fixed**: undoing the assistant's file changes left the backups in /tmp on the server. They are now removed once the original is restored and verified.
-- **Assistant**: a revised plan no longer keeps the previous plan's questions, and the model is told when a file write drops the final newline.
+- **One name everywhere**: the local data folder moves from `Termus` to `Termlo` on first launch. The whole folder is renamed in one step, so hosts, tasks and saved passwords come along; if the rename fails, the old folder keeps working and the move is retried next time.
+- Files the assistant leaves on servers (undo backups, attachment staging, temporary files) now use a `termlo-` prefix. Undo and cleanup still work for tasks from 2.0.1 and earlier.
+- The Windows installer keeps its previous identity and upgrades the installed version in place.
 
 ## 中文
 
-- **修复**：主机页切到列表视图后，点页面任何地方都会打开终端。列表行的快捷按钮改为常显。
-- **分组管理**：选中分组后可"管理分组"，重命名（改成已有名称即合并）或解散；主机菜单新增"移到分组…"。
-- **设置页**新增"安全说明"：助手能做什么、什么会发给模型、什么能撤销、密钥保存在哪。
-- **修复**：撤销助手的文件改动后，服务器 /tmp 下的备份不会被删除。现在撤销校验通过后立即删除。
-- **助手**：修改后的方案不再残留上一版的问题；写文件漏掉末尾换行时会提示模型。
+- **统一改名为 Termlo**：本地数据目录在首次启动时从 `Termus` 改名为 `Termlo`。整个文件夹一次改名，主机、任务和保存的密码都随之迁移；改名失败时继续使用旧目录，下次启动再试。
+- 助手在服务器上留下的文件（撤销备份、附件暂存、临时文件）改用 `termlo-` 前缀；2.0.1 及更早的任务仍可撤销和清理。
+- Windows 安装包保持原有安装标识，直接覆盖升级。

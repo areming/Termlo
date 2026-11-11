@@ -281,7 +281,7 @@ class AgentService {
     task.notice = failures.length
       ? `已撤销 ${restored} 项，${failures.length} 项未能撤销：${failures.join('；')}`
       : `已撤销 ${restored} 项文件改动和暂存文件。通过命令做的其他改动（安装软件、启动服务等）需要另行检查。`;
-    if (leftovers.length) task.notice += `另有 ${leftovers.length} 份备份没能从服务器删除，位于 /tmp/termus-recovery-*：${leftovers.join('；')}`;
+    if (leftovers.length) task.notice += `另有 ${leftovers.length} 份备份没能从服务器删除，位于 /tmp/termlo-recovery-*：${leftovers.join('；')}`;
     this.event(task, 'notice', task.notice);
     return { restored, failed: failures.length };
   }

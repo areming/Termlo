@@ -8,7 +8,7 @@ const {AgentRemote}=require('../src/agent-remote.cjs');
 const {startFixture}=require('./fixture.cjs');
 const {call,response}=require('./agent-fixture.cjs');
 const vault={isEncryptionAvailable:()=>true,encryptString:s=>Buffer.from(s),decryptString:b=>b.toString()};
-function directory(t){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'termus-attachment-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return dir;}
+function directory(t){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'termlo-attachment-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return dir;}
 test('attachment snapshots are encrypted, immutable, task scoped and survive restart',async t=>{
   const dir=directory(t),source=path.join(dir,'site.key'),secret='-----BEGIN PRIVATE KEY-----\nTEST-SECRET-DO-NOT-SEND\n-----END PRIVATE KEY-----';fs.writeFileSync(source,secret);
   const storage=new TaskStore(dir,vault),files=new AgentAttachments(storage);const [item]=await files.importFiles([source]);

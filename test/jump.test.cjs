@@ -8,7 +8,7 @@ const { Store, connectionRoute } = require('../src/store.cjs');
 const { SSHSession } = require('../src/ssh.cjs');
 const { startFixture } = require('./fixture.cjs');
 const base = { name: 'host', address: '127.0.0.1', port: 22, username: 'tester', auth: 'password' };
-function temp(t) { const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'termus-jump-')); t.after(() => fs.rmSync(folder, { recursive: true, force: true })); return folder; }
+function temp(t) { const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'termlo-jump-')); t.after(() => fs.rmSync(folder, { recursive: true, force: true })); return folder; }
 async function setup(t) {
   const root = temp(t),started=[];t.after(async()=>{for(const fixture of started.reverse())await fixture.close();});
   const destination = await startFixture(path.join(root, 'destination'));started.push(destination);

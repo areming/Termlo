@@ -40,14 +40,14 @@ function startFixture(root, options = {}) {
       session.on('pty', (acceptPty, _reject, size) => { terminalSizes.push(size); acceptPty(); });
       session.on('window-change', (acceptWindow, _reject, size) => { terminalSizes.push(size); acceptWindow?.(); });
       session.on('exec', (acceptExec, reject, info) => {
-        if(info.command.startsWith('# TERMUS_OS_V1')){const stream=acceptExec();stream.on('error',()=>{});stream.write('Linux\nID=ubuntu\nPRETTY_NAME="Ubuntu 24.04 LTS"\nTERMUS_ARCH=x86_64\nTERMUS_CPUS=4\nTERMUS_MEMORY=8589934592\nTERMUS_ROOT=107374182400\n');stream.exit(0);stream.end();return;}
+        if(info.command.startsWith('# TERMLO_OS_V1')){const stream=acceptExec();stream.on('error',()=>{});stream.write('Linux\nID=ubuntu\nPRETTY_NAME="Ubuntu 24.04 LTS"\nTERMLO_ARCH=x86_64\nTERMLO_CPUS=4\nTERMLO_MEMORY=8589934592\nTERMLO_ROOT=107374182400\n');stream.exit(0);stream.end();return;}
         if (!options.exec) return reject();
         const stream = acceptExec(); stream.on('error', () => {});
         options.exec(info.command, stream);
       });
       session.on('shell', acceptShell => {
         const stream = acceptShell(), shell = shells.length; shells.push(stream);
-        stream.write('Termus test server\r\ntester@fixture:~$ ');
+        stream.write('Termlo test server\r\ntester@fixture:~$ ');
         stream.on('data', chunk => { const text = chunk.toString(); received.push({ shell, text }); if (text.trim() === 'exit') { stream.exit(0); stream.end(); } else stream.write('received: ' + text + '\r\ntester@fixture:~$ '); });
       });
       session.on('sftp', acceptSftp => serveSftp(acceptSftp(), root));

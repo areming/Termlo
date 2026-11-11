@@ -394,8 +394,8 @@ test('clean-and-delete removes server leftovers first and keeps the task if clea
   const { agent } = setup(t, { script: () => reply([]), remote });
   const host = agent.hosts.get('h1');
   const task = agent.store.create({ prompt: '部署', hostIds: ['h1'], mode: 'execute' });
-  task.fileChanges = [{ id: 'w1', hostId: 'h1', path: '/etc/app.conf', state: 'applied', recovery: { directory: '/tmp/termus-recovery-' + task.id }, identity: identityKey(host) }];
-  task.stagingChanges = [{ id: 's1', kind: 'staging', hostId: 'h1', folder: '/tmp/termus-' + '0'.repeat(8) + '-0000-0000-0000-' + '0'.repeat(12), state: 'applied', identity: identityKey(host) }];
+  task.fileChanges = [{ id: 'w1', hostId: 'h1', path: '/etc/app.conf', state: 'applied', recovery: { directory: '/tmp/termlo-recovery-' + task.id }, identity: identityKey(host) }];
+  task.stagingChanges = [{ id: 's1', kind: 'staging', hostId: 'h1', folder: '/tmp/termlo-' + '0'.repeat(8) + '-0000-0000-0000-' + '0'.repeat(12), state: 'applied', identity: identityKey(host) }];
   agent.store.save(task, true);
   assert.equal(agent.state().tasks.find(x => x.id === task.id).recoverable, 2);
 
@@ -456,7 +456,7 @@ test('undo removes the server backup once the original is restored', async t => 
   const { agent } = setup(t, { script: () => reply([]), remote });
   const host = agent.hosts.get('h1');
   const task = agent.store.create({ prompt: '改配置', hostIds: ['h1'], mode: 'execute' });
-  const change = path => ({ id: path, hostId: 'h1', path, state: 'applied', recovery: { directory: '/tmp/termus-recovery-' + task.id }, identity: identityKey(host) });
+  const change = path => ({ id: path, hostId: 'h1', path, state: 'applied', recovery: { directory: '/tmp/termlo-recovery-' + task.id }, identity: identityKey(host) });
   task.fileChanges = [change('/a.conf'), change('/b.conf')];
   agent.store.save(task, true);
 
@@ -466,7 +466,7 @@ test('undo removes the server backup once the original is restored', async t => 
 
   // A backup that cannot be removed does not fail the undo, but the user is told where it is.
   const second = agent.store.create({ prompt: '改配置', hostIds: ['h1'], mode: 'execute' });
-  second.fileChanges = [{ ...change('/c.conf'), recovery: { directory: '/tmp/termus-recovery-' + second.id } }];
+  second.fileChanges = [{ ...change('/c.conf'), recovery: { directory: '/tmp/termlo-recovery-' + second.id } }];
   agent.store.save(second, true);
   failClean = true;
   assert.deepEqual(await agent.recover({ id: second.id, action: 'undo' }), { restored: 1, failed: 0 });

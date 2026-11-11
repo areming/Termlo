@@ -1,6 +1,6 @@
 {
   "name": "termlo",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Local-first SSH, SFTP and server agent desktop client",
   "private": true,
   "main": "src/main.cjs",
@@ -14,11 +14,11 @@
     "dist:mac": "npm run build && electron-builder --mac dmg --publish never"
   },
   "build": {
-    "appId": "local.termus.desktop",
+    "appId": "local.termlo.desktop",
     "productName": "Termlo",
     "electronDist": "node_modules/electron/dist",
     "directories": {
-      "output": "release/2.0.1"
+      "output": "release/2.0.2"
     },
     "files": [
       "src/**/*",
@@ -31,6 +31,7 @@
       "icon": "assets/termlo.ico"
     },
     "nsis": {
+      "guid": "8347df59-12c1-53a3-a51a-c0ed70289b78",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

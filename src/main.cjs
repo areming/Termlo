@@ -13,12 +13,14 @@ const { validateText } = require('./clipboard.cjs');
 const { readSshConfig } = require('./ssh-config.cjs');
 const { migrate } = require('./migrate.cjs');
 const { identityKey, probeInventory } = require('./host-os.cjs');
+const { resolveDataDir } = require('./data-dir.cjs');
 const atomicFile = require('./atomic-file.cjs');
 
 app.setName('Termlo');
 const root = path.join(__dirname, '..');
-// The data directory keeps its 1.x name so existing hosts and keys are found.
-const dataPath = process.env.TERMUS_DATA_DIR || (app.isPackaged ? path.join(app.getPath('appData'), 'Termus') : path.join(root, 'data'));
+// userData is the data directory itself, so Electron's key for saved passwords lives with the data.
+// Must run before app ready; a packaged build moves the pre-2.0.2 "Termus" folder to "Termlo".
+const dataPath = process.env.TERMLO_DATA_DIR || (app.isPackaged ? resolveDataDir(app.getPath('appData')).directory : path.join(root, 'data'));
 app.setPath('userData', dataPath);
 
 const indexUrl = pathToFileURL(path.join(root, 'dist/index.html')).href;
@@ -28,7 +30,7 @@ const conflicts = new Map();     // id -> resolve
 let window, store, agent, prompts, migration, preferences;
 
 function send(message) {
-  if (window && !window.isDestroyed()) window.webContents.send('termus:event', message);
+  if (window && !window.isDestroyed()) window.webContents.send('termlo:event', message);
 }
 
 function trusted(event) {
@@ -36,7 +38,7 @@ function trusted(event) {
 }
 
 function handle(name, action) {
-  ipcMain.handle('termus:' + name, async (event, ...args) => {
+  ipcMain.handle('termlo:' + name, async (event, ...args) => {
     if (!trusted(event)) throw new Error('拒绝未授权请求');
     return action(...args);
   });
@@ -230,7 +232,7 @@ function installHandlers() {
   handle('connectFiles', (id, hostId, credentials) => openConnection(id, hostId, credentials, 'sftp').then(() => { connections.get(id).hostId = hostId; return true; }));
   handle('disconnect', id => { connections.get(id)?.close(); connections.delete(id); });
   handle('resize', (id, cols, rows) => session(id).resize(cols, rows));
-  ipcMain.on('termus:write', (event, id, data) => {
+  ipcMain.on('termlo:write', (event, id, data) => {
     if (!trusted(event)) return;
     try { session(id).write(data); } catch (error) { send({ type: 'fault', id, message: error.message }); }
   });
