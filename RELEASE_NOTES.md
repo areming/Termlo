@@ -1,11 +1,15 @@
-# Termlo 2.0.2
+# Termlo 2.0.3
 
-- **One name everywhere**: the local data folder moves from `Termus` to `Termlo` on first launch. The whole folder is renamed in one step, so hosts, tasks and saved passwords come along; if the rename fails, the old folder keeps working and the move is retried next time.
-- Files the assistant leaves on servers (undo backups, attachment staging, temporary files) now use a `termlo-` prefix. Undo and cleanup still work for tasks from 2.0.1 and earlier.
-- The Windows installer keeps its previous identity and upgrades the installed version in place.
+- **See the assistant think**: while the model reasons, the assistant shows "思考中… N 秒" and the latest line of its reasoning (passwords hidden, never saved in the task). The first visible feedback now arrives in about 2 seconds instead of about 6.
+- The assistant asks before stopping or deleting processes, containers or files that the task did not create.
+- More accurate reports: checks only state whether the goal was met. When some checks are only unverified, the headline says so instead of "failed". Risks and disruptive checks that were skipped (such as rebooting) go in the summary.
+- The assistant no longer reads shell history or other unrelated files while troubleshooting, and always explains in Chinese.
+- Three real troubleshooting scenarios added to the benchmark (broken systemd unit, old log cleanup, port held by a leftover process); all 9 scenarios pass.
 
 ## 中文
 
-- **统一改名为 Termlo**：本地数据目录在首次启动时从 `Termus` 改名为 `Termlo`。整个文件夹一次改名，主机、任务和保存的密码都随之迁移；改名失败时继续使用旧目录，下次启动再试。
-- 助手在服务器上留下的文件（撤销备份、附件暂存、临时文件）改用 `termlo-` 前缀；2.0.1 及更早的任务仍可撤销和清理。
-- Windows 安装包保持原有安装标识，直接覆盖升级。
+- **看得见助手在想什么**：模型思考时，界面显示"思考中… N 秒"和一行最新的思考内容（会隐藏密码，不保存进任务记录）。首个可见反馈从 6 秒左右提前到 2 秒左右。
+- 助手要停止或删除不是本任务创建的进程、容器、文件时，会先问你。
+- 报告更准确：验收项只写目标是否达成；只有"未验证"的项时，标题如实写"未验证"而不是"未通过"。发现的风险和没做的中断性验证（如重启主机）写在总结里。
+- 助手排查时不再翻看 shell 历史等与任务无关的文件，说明和报告统一用中文。
+- 基准新增 3 个真实排障场景：systemd 服务起不来、清理旧日志、端口被遗留进程占用。9 个场景全部通过。
