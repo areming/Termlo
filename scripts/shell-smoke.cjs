@@ -114,15 +114,14 @@ async function main() {
       assert.ok(fs.existsSync(path.join(remoteRoot, 'site')));
       const row = page.locator('.files-list .row', { hasText: 'readme.txt' });
       await row.hover();
-      await row.getByRole('button', { name: '更多操作' }).click();
-      await page.getByRole('menuitem', { name: '重命名' }).click();
+      await row.getByRole('button', { name: '重命名 readme.txt' }).click();
       await page.getByLabel('新名称').fill('notes.txt');
       await page.getByRole('button', { name: '重命名', exact: true }).click();
       await page.locator('.files-list').getByText('notes.txt').waitFor();
       assert.ok(fs.existsSync(path.join(remoteRoot, 'notes.txt')));
       const renamed = page.locator('.files-list .row', { hasText: 'notes.txt' });
-      await renamed.hover();
-      await renamed.getByRole('button', { name: '更多操作' }).click();
+      await renamed.click({ button: 'right' });   // file management lives in the right-click menu
+      await shot('dark-files-context');
       await page.getByRole('menuitem', { name: '删除…' }).click();
       await page.getByRole('button', { name: '删除文件' }).click();
       await page.locator('.files-list').getByText('notes.txt').waitFor({ state: 'detached' });
@@ -194,7 +193,7 @@ async function main() {
       await row.waitFor();
       // Row buttons and the page around the list must not open the terminal.
       await page.locator('.page-title').click();
-      await row.getByRole('button', { name: '更多操作' }).click();
+      await row.click({ button: 'right' });
       await page.getByRole('menuitem', { name: '移到分组…' }).click();
       await page.getByLabel('分组名称').fill('测试组');
       await page.getByRole('button', { name: '移动', exact: true }).click();

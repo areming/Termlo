@@ -1,15 +1,15 @@
-# Termlo 2.0.3
+# Termlo 2.1.0
 
-- **See the assistant think**: while the model reasons, the assistant shows "思考中… N 秒" and the latest line of its reasoning (passwords hidden, never saved in the task). The first visible feedback now arrives in about 2 seconds instead of about 6.
-- The assistant asks before stopping or deleting processes, containers or files that the task did not create.
-- More accurate reports: checks only state whether the goal was met. When some checks are only unverified, the headline says so instead of "failed". Risks and disruptive checks that were skipped (such as rebooting) go in the summary.
-- The assistant no longer reads shell history or other unrelated files while troubleshooting, and always explains in Chinese.
-- Three real troubleshooting scenarios added to the benchmark (broken systemd unit, old log cleanup, port held by a leftover process); all 9 scenarios pass.
+- **Live host monitoring is back**: once a terminal or file session is open, the host card shows CPU trend, memory, disk, network and load every 5 seconds, reusing the existing connection and storing nothing.
+- **A brighter terminal**: a new 16-color palette, bundled JetBrains Mono (switchable), semantic highlighting (prompt, commands, IPs / URLs, paths, errors / warnings / success; can be turned off) and a live status bar.
+- **One-click host actions**: terminal, files, assistant, edit, copy address and delete sit directly on the card; right-click shows everything, including moving to a group.
+- **Files**: right-click a file or empty space to download, upload, create folders, rename, copy paths or delete. Drop local files onto a folder to upload into that folder.
+- **A new look**: ink-blue base, and consistent buttons, inputs, selects, menus and icons in both themes.
 
 ## 中文
 
-- **看得见助手在想什么**：模型思考时，界面显示"思考中… N 秒"和一行最新的思考内容（会隐藏密码，不保存进任务记录）。首个可见反馈从 6 秒左右提前到 2 秒左右。
-- 助手要停止或删除不是本任务创建的进程、容器、文件时，会先问你。
-- 报告更准确：验收项只写目标是否达成；只有"未验证"的项时，标题如实写"未验证"而不是"未通过"。发现的风险和没做的中断性验证（如重启主机）写在总结里。
-- 助手排查时不再翻看 shell 历史等与任务无关的文件，说明和报告统一用中文。
-- 基准新增 3 个真实排障场景：systemd 服务起不来、清理旧日志、端口被遗留进程占用。9 个场景全部通过。
+- **主机监控回来了**：打开终端或文件后，主机卡片实时显示 CPU 走势、内存、磁盘、网速和负载（每 5 秒，复用已有连接，不额外连接、不保存）。
+- **终端更醒目**：全新 16 色调色板、内置 JetBrains Mono 字体（可换）、语义高亮（提示符、命令、IP / 网址、路径、错误 / 警告 / 成功，可关闭）、底部实时状态栏。
+- **主机操作一步到位**：终端、文件、助手、编辑、复制地址、删除直接放在卡片上；右键卡片显示全部操作（包括移到分组）。
+- **文件页**：右键文件或空白处即可下载、上传、新建文件夹、重命名、复制路径、删除；把本机文件拖到某个文件夹上，就上传到那个文件夹。
+- **全新视觉**：墨蓝底色，按钮、输入框、下拉框、菜单、图标在两套主题下统一调整。

@@ -2,7 +2,7 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
-import { api, html, ico, render, $, $$, on, toast, fail, menu, message, uid } from './ui.js';
+import { api, html, ico, render, $, $$, on, toast, fail, menu, contextMenu, message, uid } from './ui.js';
 import { SemanticHighlights } from './terminal-highlights.js';
 import { view } from './telemetry.js';
 
@@ -185,20 +185,15 @@ export function createTerminalPage(element, app) {
       return true;
     });
     pane.addEventListener('contextmenu', event => {
-      event.preventDefault();
       const selection = term.getSelection();
-      const anchor = document.createElement('span');
-      anchor.style.cssText = `position:fixed;left:${event.clientX}px;top:${event.clientY}px;width:0;height:0`;
-      document.body.append(anchor);
-      menu(anchor, [
-        { label: '复制', icon: 'copy', run: () => copySelection(tab) },
-        { label: '粘贴', icon: 'download', run: () => paste(tab) },
+      contextMenu(event, [
+        { label: '复制', icon: 'copy', hint: 'Ctrl Shift C', run: () => copySelection(tab) },
+        { label: '粘贴', icon: 'clipboard', hint: 'Ctrl Shift V', run: () => paste(tab) },
         ...(selection.trim() ? [{ label: '问助手', icon: 'assistant', run: () => askAssistant(tab, selection) }] : []),
         'separator',
-        { label: '查找', icon: 'search', run: openSearch },
+        { label: '查找', icon: 'search', hint: 'Ctrl F', run: openSearch },
         { label: '清屏', icon: 'refresh', run: () => term.clear() },
-      ]);
-      setTimeout(() => anchor.remove(), 0);
+      ], term.textarea);
     });
 
     select(tab);

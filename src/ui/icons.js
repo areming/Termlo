@@ -58,6 +58,12 @@ const SHAPES = {
     '<path d="M4.5 4v4h4M19.5 20v-4h-4"/>',
   upload: '<path d="M12 15V4M7 9l5-5 5 5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
+  clipboard:
+    '<rect x="6" y="4" width="12" height="17" rx="2"/>' +
+    '<path d="M9.5 4V3.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V4M9 10h6M9 14h4"/>',
+  'folder-plus':
+    '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
+    '<path d="M12 10.5v5M9.5 13h5"/>',
   play: '<path d="M7 5v14l11-7z"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',

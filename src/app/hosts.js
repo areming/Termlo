@@ -1,5 +1,5 @@
 // Hosts: grouped cards or list, quick actions, add/edit, ~/.ssh/config import.
-import { api, html, raw, ico, render, $, $$, on, dialog, confirm, toast, fail, menu, selectable, bytes } from './ui.js';
+import { api, html, raw, ico, render, $, $$, on, dialog, confirm, toast, fail, menu, contextMenu, selectable, bytes } from './ui.js';
 import { view } from './telemetry.js';
 
 const OS_LABEL = host => host.operatingSystem?.name || '';
@@ -39,6 +39,21 @@ export function createHostsPage(element, app) {
     return parts;
   }
 
+  // Every action is one click: the three ways to work with a host, then three tools.
+  function actions(host) {
+    return html`
+      <div class="host-actions" role="group" aria-label="${host.name} 的操作">
+        <button class="host-action" type="button" data-action="terminal" title="打开终端">${ico('terminal', 'sm')}<span>终端</span></button>
+        <button class="host-action" type="button" data-action="files" title="浏览文件">${ico('folder', 'sm')}<span>文件</span></button>
+        <button class="host-action" type="button" data-action="assistant" title="交给助手">${ico('assistant', 'sm')}<span>助手</span></button>
+      </div>
+      <div class="host-tools">
+        <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="edit" aria-label="编辑 ${host.name}" title="编辑（名称、地址、分组、跳板机）">${ico('edit', 'sm')}</button>
+        <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="copy" aria-label="复制 ${host.name} 的地址" title="复制地址">${ico('copy', 'sm')}</button>
+        <button class="btn btn-icon btn-sm btn-ghost btn-danger-ghost" type="button" data-action="delete" aria-label="删除 ${host.name}" title="删除主机">${ico('trash', 'sm')}</button>
+      </div>`;
+  }
+
   function card(host, online) {
     const target = `${host.username}@${host.address}${host.port !== 22 ? ':' + host.port : ''}`;
     const jump = host.jumpHostId ? app.hostLabel(host.jumpHostId) : '';
@@ -50,7 +65,7 @@ export function createHostsPage(element, app) {
           <span class="host-pulse" aria-hidden="true"></span>
           <div class="host-card-main">
             <h3 class="host-card-title truncate"><a class="card-link" href="#terminal" data-action="terminal" title="打开终端">${host.name}</a></h3>
-            <p class="host-card-target mono truncate" translate="no">${target}</p>
+            <p class="host-card-target truncate"><span class="mono" translate="no">${target}</span>${jump ? html`<span class="host-via" title="经由跳板机连接">经 ${jump}</span>` : ''}</p>
           </div>
           ${OS_LABEL(host) ? html`<span class="host-os truncate" title="${OS_LABEL(host)}">${OS_LABEL(host).replace(/ LTS$/, '')}</span>` : ''}
         </header>
@@ -58,23 +73,10 @@ export function createHostsPage(element, app) {
           ? html`<div class="host-telemetry" data-telemetry="${host.id}" data-variant="card">${view('card', telemetry.get(host.id), telemetry.history(host.id))}</div>`
           : html`<div class="host-idle">
               ${facts.length ? html`<span class="host-facts">${facts.map(f => html`<span>${f}</span>`)}</span>` : ''}
-              <div class="host-idle-action">
-                <button class="btn btn-sm" type="button" data-action="terminal">${ico('terminal', 'sm')}连接</button>
-                <span class="text-xs text-muted">连接后显示实时状态</span>
-              </div>
+              <span class="text-xs text-muted">打开终端或文件后，这里会显示实时状态</span>
             </div>`}
         <footer class="host-card-foot">
-          <div class="host-badges">
-            ${online ? html`<span class="status" data-state="connected"><span class="dot"></span>在线</span>` : ''}
-            ${jump ? html`<span class="badge badge-outline" title="经由跳板机连接">经 ${jump}</span>` : ''}
-            ${host.auth === 'key' ? html`<span class="badge badge-outline">${ico('key', 'sm')}密钥</span>` : ''}
-          </div>
-          <div class="quick-actions">
-            <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="terminal" aria-label="打开终端" title="打开终端">${ico('terminal', 'sm')}</button>
-            <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="files" aria-label="浏览文件" title="浏览文件">${ico('folder', 'sm')}</button>
-            <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="assistant" aria-label="交给助手" title="交给助手">${ico('assistant', 'sm')}</button>
-            <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="more" aria-label="更多操作" title="更多操作">${ico('more', 'sm')}</button>
-          </div>
+          ${actions(host)}
         </footer>
       </article>`;
   }
@@ -89,11 +91,7 @@ export function createHostsPage(element, app) {
         </div>
         <span class="row-aside">${OS_LABEL(host)}</span>
         <span class="row-aside">${host.group || '未分组'}</span>
-        <div class="quick-actions">
-          <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="files" aria-label="浏览文件" title="浏览文件">${ico('folder', 'sm')}</button>
-          <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="assistant" aria-label="交给助手" title="交给助手">${ico('assistant', 'sm')}</button>
-          <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="more" aria-label="更多操作" title="更多操作">${ico('more', 'sm')}</button>
-        </div>
+        <div class="quick-actions host-row-actions">${actions(host)}</div>
       </li>`;
   }
 
@@ -363,20 +361,31 @@ export function createHostsPage(element, app) {
     if (action === 'terminal') return app.navigate('terminal', { hostId });
     if (action === 'files') return app.navigate('files', { hostId });
     if (action === 'assistant') return app.navigate('assistant', { hostIds: [hostId] });
-    if (action === 'more') {
-      return menu(target, [
-        { label: '打开终端', icon: 'terminal', run: () => app.navigate('terminal', { hostId }) },
-        { label: '编辑主机', icon: 'edit', run: () => edit(host) },
-        { label: '移到分组…', icon: 'folder', run: async () => {
-          const next = await askGroup({ title: `把 ${host.name} 移到分组`, value: host.group === '未分组' ? '' : host.group, action: '移动', help: '输入新名称会新建分组；留空则移到“未分组”。', allowEmpty: true });
-          if (next === null) return;
-          await moveHosts([host.id], next, `已移到“${next || '未分组'}”`);
-        } },
-        { label: '复制地址', icon: 'copy', run: () => api.writeClipboard(`${host.username}@${host.address}`).then(() => toast('已复制')) },
-        'separator',
-        { label: '删除主机…', icon: 'trash', danger: true, run: () => remove(host) },
-      ]);
-    }
+    if (action === 'edit') return edit(host);
+    if (action === 'copy') return copyAddress(host);
+    if (action === 'delete') return remove(host);
+  });
+
+  const copyAddress = host => api.writeClipboard(`${host.username}@${host.address}`).then(() => toast('已复制地址'));
+  async function moveTo(host) {
+    const next = await askGroup({ title: `把 ${host.name} 移到分组`, value: host.group === '未分组' ? '' : host.group, action: '移动', help: '输入新名称会新建分组；留空则移到“未分组”。', allowEmpty: true });
+    if (next !== null) await moveHosts([host.id], next, `已移到“${next || '未分组'}”`);
+  }
+  element.addEventListener('contextmenu', event => {
+    const hostId = event.target.closest('[data-host]')?.dataset.host;
+    const host = store.get().hosts.find(h => h.id === hostId);
+    if (!host) return;
+    contextMenu(event, [
+      { label: '打开终端', icon: 'terminal', run: () => app.navigate('terminal', { hostId }) },
+      { label: '浏览文件', icon: 'folder', run: () => app.navigate('files', { hostId }) },
+      { label: '交给助手', icon: 'assistant', run: () => app.navigate('assistant', { hostIds: [hostId] }) },
+      'separator',
+      { label: '编辑…', icon: 'edit', run: () => edit(host) },
+      { label: '移到分组…', icon: 'folder', run: () => moveTo(host) },
+      { label: '复制地址', icon: 'copy', run: () => copyAddress(host) },
+      'separator',
+      { label: '删除主机…', icon: 'trash', danger: true, run: () => remove(host) },
+    ], event.target.closest('[data-host]').querySelector('.card-link'));
   });
   element.addEventListener('input', event => {
     if (event.target.id === 'host-filter') { query = event.target.value; draw(); }

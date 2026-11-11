@@ -1,5 +1,5 @@
 // Files: browse a server over SFTP; drop files to upload; folder transfers with a queue.
-import { api, html, raw, ico, render, $, on, dialog, confirm, toast, fail, menu, message, bytes, when, uid } from './ui.js';
+import { api, html, raw, ico, render, $, $$, on, dialog, confirm, toast, fail, menu, contextMenu, message, bytes, when, uid } from './ui.js';
 
 const AUTH_FAILURE = /authentication|认证|密码|passphrase|All configured authentication methods failed/i;
 
@@ -29,7 +29,7 @@ export function createFilesPage(element, app) {
           </ol>
           <span class="toolbar-spacer"></span>
           <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="goto" aria-label="前往路径" title="前往路径">${ico('arrow-right', 'sm')}</button>
-          <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="mkdir" aria-label="新建文件夹" title="新建文件夹">${ico('plus', 'sm')}</button>
+          <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="mkdir" aria-label="新建文件夹" title="新建文件夹">${ico('folder-plus', 'sm')}</button>
           <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="refresh" aria-label="刷新" title="刷新">${ico('refresh', 'sm')}</button>
           <button class="btn btn-sm" type="button" data-action="upload-folder">上传文件夹</button>
           <button class="btn btn-sm btn-primary" type="button" data-action="upload">${ico('upload', 'sm')}上传</button>
@@ -51,12 +51,14 @@ export function createFilesPage(element, app) {
                     </button>
                     <div class="quick-actions">
                       <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="download" aria-label="下载 ${f.name}" title="下载">${ico('download', 'sm')}</button>
-                      <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="more" aria-label="更多操作" title="更多操作">${ico('more', 'sm')}</button>
+                      <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="rename" aria-label="重命名 ${f.name}" title="重命名">${ico('edit', 'sm')}</button>
+                      <button class="btn btn-icon btn-sm btn-ghost btn-danger-ghost" type="button" data-action="delete" aria-label="删除 ${f.name}" title="删除">${ico('trash', 'sm')}</button>
                     </div>
                   </li>`)}
                 ${!files.length ? html`<li class="row"><span class="text-muted files-empty">空文件夹。把文件拖到这里即可上传。</span></li>` : ''}
-              </ul>`}
-          <div class="drop-hint" hidden>${ico('upload', 'lg')}<span>松开即上传到 <span class="mono">${path}</span></span></div>
+              </ul>
+              <p class="files-tip text-xs text-muted">右键文件或空白处可以管理文件；把文件拖到某个文件夹上，就会上传到那个文件夹。</p>`}
+          <div class="drop-hint" hidden>${ico('upload', 'lg')}<span>松开上传到 <span class="mono" id="drop-target">${path}</span></span></div>
         </div>
         ${transfers.size ? html`
           <section class="transfer-queue" aria-label="传输">
@@ -138,10 +140,15 @@ export function createFilesPage(element, app) {
   }
 
   // ---- actions -----------------------------------------------------------------------------
-  async function upload(paths) {
+  async function upload(paths, directory = current?.path) {
     if (!current) return;
-    try { await api.upload(current.id, current.path, paths); }
+    try { await api.upload(current.id, directory, paths); }
     catch (error) { fail(error); }
+    list(current.path);
+  }
+
+  async function uploadFolder(directory = current?.path) {
+    try { await api.uploadFolder(current.id, directory); } catch (error) { fail(error); }
     list(current.path);
   }
 
@@ -174,14 +181,14 @@ export function createFilesPage(element, app) {
     list(current.path);
   }
 
-  async function mkdir() {
+  async function mkdir(directory = current.path) {
     const { value, data } = await dialog({
       title: '新建文件夹',
       body: html`<div class="field"><label class="field-label" for="mkdir-input">名称</label><input class="input mono" id="mkdir-input" name="name" required pattern="[^\\/]+" autocomplete="off" autofocus></div>`,
       actions: [{ label: '取消', value: 'cancel', tone: 'ghost' }, { label: '新建', value: 'ok', tone: 'primary' }],
     });
     if (value !== 'ok') return;
-    try { await api.mkdirRemote(current.id, join(current.path, data.name)); }
+    try { await api.mkdirRemote(current.id, join(directory, data.name)); }
     catch (error) { fail(error); }
     list(current.path);
   }
@@ -230,24 +237,53 @@ export function createFilesPage(element, app) {
     const file = fileOf(button);
     if (action === 'refresh') return list(current.path);
     if (action === 'upload') return upload();
-    if (action === 'upload-folder') return api.uploadFolder(current.id, current.path).catch(fail).then(() => list(current.path));
+    if (action === 'upload-folder') return uploadFolder();
     if (action === 'mkdir') return mkdir();
     if (action === 'goto') return goto();
     if (action === 'reconnect') return open(current.hostId, { force: false });
     if (action === 'download') return download(file);
+    if (action === 'rename') return rename(file);
+    if (action === 'delete') return remove(file);
     if (action === 'switch') {
       const hosts = store.get().hosts.slice().sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
       return menu(button, hosts.slice(0, 20).map(h => ({ label: h.name, icon: 'host', run: () => open(h.id) })));
     }
-    if (action === 'more') {
-      return menu(button, [
-        { label: '下载', icon: 'download', run: () => download(file) },
-        { label: '重命名', icon: 'edit', run: () => rename(file) },
-        { label: '复制路径', icon: 'copy', run: () => api.writeClipboard(file.path).then(() => toast('已复制路径')) },
+  });
+
+  // Right-click: everything you can do with a file, or with the folder you are in.
+  const copy = (text, note) => api.writeClipboard(text).then(() => toast(note));
+  element.addEventListener('contextmenu', event => {
+    if (!current || current.status !== 'ready' || !event.target.closest('.files-body')) return;
+    const row = event.target.closest('[data-path]');
+    const file = row && row.dataset.name ? fileOf(row) : null;
+    if (file) {
+      return contextMenu(event, [
+        file.directory
+          ? { label: '打开', icon: 'folder', run: () => list(file.path) }
+          : { label: '下载…', icon: 'download', run: () => download(file) },
+        ...(file.directory ? [
+          { label: '下载文件夹…', icon: 'download', run: () => download(file) },
+          { label: '上传文件到这里…', icon: 'upload', run: () => upload(undefined, file.path) },
+          { label: '上传文件夹到这里…', icon: 'upload', run: () => uploadFolder(file.path) },
+          { label: '在这里新建文件夹…', icon: 'folder-plus', run: () => mkdir(file.path) },
+        ] : []),
+        'separator',
+        { label: '重命名…', icon: 'edit', run: () => rename(file) },
+        { label: '复制路径', icon: 'copy', run: () => copy(file.path, '已复制路径') },
+        { label: '复制名称', icon: 'copy', run: () => copy(file.name, '已复制名称') },
         'separator',
         { label: file.directory ? '删除文件夹…' : '删除…', icon: 'trash', danger: true, run: () => remove(file) },
-      ]);
+      ], row.querySelector('[data-open]'));
     }
+    contextMenu(event, [
+      { label: '上传文件…', icon: 'upload', run: () => upload() },
+      { label: '上传文件夹…', icon: 'upload', run: () => uploadFolder() },
+      { label: '新建文件夹…', icon: 'folder-plus', run: () => mkdir() },
+      'separator',
+      { label: '刷新', icon: 'refresh', run: () => list(current.path) },
+      { label: '复制当前路径', icon: 'copy', run: () => copy(current.path, '已复制路径') },
+      { label: '前往路径…', icon: 'arrow-right', run: goto },
+    ]);
   });
 
   // Drag & drop from the operating system.
@@ -259,15 +295,31 @@ export function createFilesPage(element, app) {
     const hint = $('.drop-hint', element);
     if (hint) hint.hidden = false;
   });
-  element.addEventListener('dragover', event => { if (current?.status === 'ready') event.preventDefault(); });
-  element.addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; const hint = $('.drop-hint', element); if (hint) hint.hidden = true; } });
+  // A folder row under the pointer becomes the target; anywhere else means the current folder.
+  const folderAt = target => target.closest?.('.files-list [data-dir="1"][data-name]') || null;
+  const clearTarget = () => { for (const row of $$('.drop-target', element)) row.classList.remove('drop-target'); };
+  element.addEventListener('dragover', event => {
+    if (current?.status !== 'ready') return;
+    event.preventDefault();
+    const folder = folderAt(event.target);
+    if (folder?.classList.contains('drop-target')) return;
+    clearTarget();
+    folder?.classList.add('drop-target');
+    const label = $('#drop-target', element);
+    if (label) label.textContent = folder ? folder.dataset.path : current.path;
+    const hint = $('.drop-hint', element);
+    if (hint) hint.dataset.mode = folder ? 'folder' : 'here';   // over a folder: a small label, so the row stays visible
+  });
+  element.addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; clearTarget(); const hint = $('.drop-hint', element); if (hint) hint.hidden = true; } });
   element.addEventListener('drop', event => {
     event.preventDefault();
     depth = 0;
+    const folder = folderAt(event.target);
+    clearTarget();
     const hint = $('.drop-hint', element);
     if (hint) hint.hidden = true;
     const paths = [...(event.dataTransfer?.files || [])].map(file => api.pathForFile(file)).filter(Boolean);
-    if (paths.length) upload(paths);
+    if (paths.length) upload(paths, folder ? folder.dataset.path : current.path);
   });
 
   app.on('transfer', event => {

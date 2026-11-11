@@ -174,6 +174,8 @@ export function uid(prefix = 'x') {
 }
 
 // Popup menu anchored to a button. items: [{ label, icon, danger, run } | 'separator']
+// items: { label, icon, run, danger, hint } | 'separator'. Opens below the anchor element,
+// or at the pointer when the anchor is a { x, y, focus } point (right-click menus).
 export function menu(anchor, items) {
   document.querySelector('.menu[data-popup]')?.remove();
   const element = document.createElement('div');
@@ -182,13 +184,14 @@ export function menu(anchor, items) {
   element.setAttribute('role', 'menu');
   render(element, html`${items.map((item, i) => item === 'separator'
     ? html`<hr class="menu-sep">`
-    : html`<button class="menu-item ${item.danger ? 'menu-item-danger' : ''}" type="button" role="menuitem" data-index="${i}">${item.icon ? ico(item.icon) : ''}${item.label}</button>`)}`);
+    : html`<button class="menu-item ${item.danger ? 'menu-item-danger' : ''}" type="button" role="menuitem" data-index="${i}">${item.icon ? ico(item.icon, 'sm') : ''}<span class="menu-label">${item.label}</span>${item.hint ? html`<kbd class="menu-hint">${item.hint}</kbd>` : ''}</button>`)}`);
   document.body.append(element);
-  const box = anchor.getBoundingClientRect();
+  const point = !(anchor instanceof Element);
+  const box = point ? { left: anchor.x, right: anchor.x, top: anchor.y, bottom: anchor.y } : anchor.getBoundingClientRect();
   const width = element.offsetWidth, height = element.offsetHeight;
-  element.style.left = Math.max(8, Math.min(box.right - width, innerWidth - width - 8)) + 'px';
+  element.style.left = Math.max(8, Math.min(point ? box.left : box.right - width, innerWidth - width - 8)) + 'px';
   element.style.top = (box.bottom + height + 8 > innerHeight ? box.top - height - 4 : box.bottom + 4) + 'px';
-  const close = () => { element.remove(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', key, true); anchor.focus(); };
+  const close = () => { element.remove(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', key, true); (point ? anchor.focus : anchor)?.focus?.(); };
   const outside = event => { if (!element.contains(event.target)) close(); };
   const key = event => {
     const buttons = [...element.querySelectorAll('.menu-item')];
@@ -205,4 +208,10 @@ export function menu(anchor, items) {
   });
   setTimeout(() => { document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', key, true); });
   element.querySelector('.menu-item')?.focus();
+}
+
+// Right-click menu at the pointer. focus: the element that gets focus back afterwards.
+export function contextMenu(event, items, focus = event.target.closest('button, a, [tabindex]')) {
+  event.preventDefault();
+  menu({ x: event.clientX, y: event.clientY, focus }, items);
 }
