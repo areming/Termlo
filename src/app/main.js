@@ -22,6 +22,7 @@ const app = {
   navigate,
   hostLabel,
   credentials,
+  forgetCredentials: hostIds => { for (const id of hostIds) for (const host of route(id)) sessionSecrets.delete(host.id); },
   on(type, handler) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(handler); },
   setPreferences,
 };
@@ -105,9 +106,13 @@ function route(hostId) {
 
 // Ask for whatever a connection route needs that is not saved: passwords or key passphrases.
 // force: ask again even if a password is saved (after an authentication failure).
+// Secrets typed but not saved are kept in memory for this app session, shared by the
+// terminal, files and assistant, so one host is not asked for three times.
+const sessionSecrets = new Map();   // host id -> { password } | { passphrase }
 async function credentials(hostId, { force = false, reason = '' } = {}) {
   const result = {};
   for (const host of route(hostId)) {
+    if (!force && sessionSecrets.has(host.id)) { result[host.id] = sessionSecrets.get(host.id); continue; }
     const needsPassword = host.auth === 'password' && (force || !host.hasPassword);
     const needsPassphrase = host.auth === 'key' && force;
     if (!needsPassword && !needsPassphrase) continue;
@@ -127,6 +132,7 @@ async function credentials(hostId, { force = false, reason = '' } = {}) {
     if (value !== 'ok') return null;
     if (needsPassword) {
       result[host.id] = { password: data.secret };
+      if (!data.remember) sessionSecrets.set(host.id, result[host.id]);
       if (data.remember) {
         try {
           const { hasPassword, ...saved } = host;
@@ -136,6 +142,7 @@ async function credentials(hostId, { force = false, reason = '' } = {}) {
       }
     } else {
       result[host.id] = { passphrase: data.secret };
+      sessionSecrets.set(host.id, result[host.id]);
     }
   }
   return result;

@@ -309,8 +309,17 @@ function installHandlers() {
   handle('agentAnswer', input => ({ id: agent.answer(input).id }));
   handle('agentExecutePlan', input => ({ id: agent.executePlan(input).id }));
   handle('agentPause', async id => { await agent.pause(id); return agent.state(); });
-  handle('agentRemove', id => { agent.remove(id); return agent.state(); });
+  handle('agentRemove', async input => {
+    const { id, clean = false, credentials = {} } = typeof input === 'string' ? { id: input } : input || {};
+    const result = await agent.remove(id, { clean: !!clean, credentials });
+    return { ...result, state: agent.state() };
+  });
   handle('agentRecover', input => agent.recover(input));
+  handle('agentAddAttachments', paths => {
+    const files = Array.isArray(paths) ? paths.filter(p => typeof p === 'string' && path.isAbsolute(p)) : [];
+    if (!files.length) throw new Error('没有可添加的文件');
+    return agent.attachments.importFiles(files);
+  });
   handle('agentPickAttachments', async () => {
     const result = await dialog.showOpenDialog(window, { title: '添加附件（单个最多 25 MB）', properties: ['openFile', 'multiSelections'] });
     return result.canceled ? [] : agent.attachments.importFiles(result.filePaths);

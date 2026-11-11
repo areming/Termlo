@@ -158,6 +158,19 @@ async function main() {
       await shot('dark-assistant-result');
     });
 
+    await step('task manager lists and deletes tasks', async () => {
+      await page.locator('[data-action="tasks"]').click();
+      await page.getByRole('menuitem', { name: /全部任务/ }).click();
+      await page.getByLabel('筛选任务').fill('nginx');
+      await page.locator('#task-list [data-open-task]').first().waitFor();
+      await shot('dark-task-manager');
+      await page.locator('#task-list .row').first().hover();
+      await page.locator('#task-list [data-remove-task]').first().click();
+      await page.getByRole('button', { name: '删除任务' }).click();
+      await page.getByRole('heading', { name: '要在服务器上做什么？' }).waitFor();
+      assert.equal(await page.evaluate(async () => (await window.termlo.agentState()).tasks.length), 0);
+    });
+
     await step('command palette', async () => {
       await page.keyboard.press('Control+k');
       await page.getByLabel('搜索主机或操作').fill('fixture');
@@ -168,7 +181,7 @@ async function main() {
     await step('light theme', async () => {
       await page.getByRole('button', { name: '切换到亮色主题' }).click();
       await page.locator('html[data-theme="light"]').waitFor();
-      await shot('light-assistant-result');
+      await shot('light-assistant-compose');
       for (const name of ['hosts', 'terminal', 'files', 'settings']) {
         await page.locator(`.rail-item[data-page="${name}"]`).click();
         await page.waitForTimeout(250);

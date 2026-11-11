@@ -10,7 +10,7 @@ const methods = [
   'readClipboard', 'writeClipboard', 'editMenu',
   'agentState', 'agentTask', 'agentConfigure', 'agentTest', 'agentStart', 'agentFollowup',
   'agentResume', 'agentAnswer', 'agentExecutePlan', 'agentPause', 'agentRemove', 'agentRecover',
-  'agentPickAttachments', 'agentDropAttachment',
+  'agentPickAttachments', 'agentAddAttachments', 'agentDropAttachment',
 ];
 
 const api = Object.fromEntries(methods.map(name => [name, (...args) => ipcRenderer.invoke('termus:' + name, ...args)]));

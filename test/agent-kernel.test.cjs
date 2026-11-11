@@ -380,3 +380,45 @@ test('a saved API key that cannot be decrypted is reported, not presented as sav
   assert.equal(store.publicSettings().keyBroken, true);
   assert.throws(() => store.key(), /重新填写/);
 });
+
+test('clean-and-delete removes server leftovers first and keeps the task if cleaning fails', async t => {
+  const { identityKey } = require('../src/host-os.cjs');
+  const cleaned = [];
+  let failStaging = true;
+  const remote = fakeRemote();
+  const factory = remote.factory;
+  remote.factory = options => Object.assign(factory(options), {
+    async cleanRecovery(records) { cleaned.push(...records.map(r => r.path)); },
+    async cleanStaging(record) { if (failStaging) throw new Error('权限不足'); cleaned.push(record.folder); },
+  });
+  const { agent } = setup(t, { script: () => reply([]), remote });
+  const host = agent.hosts.get('h1');
+  const task = agent.store.create({ prompt: '部署', hostIds: ['h1'], mode: 'execute' });
+  task.fileChanges = [{ id: 'w1', hostId: 'h1', path: '/etc/app.conf', state: 'applied', recovery: { directory: '/tmp/termus-recovery-' + task.id }, identity: identityKey(host) }];
+  task.stagingChanges = [{ id: 's1', kind: 'staging', hostId: 'h1', folder: '/tmp/termus-' + '0'.repeat(8) + '-0000-0000-0000-' + '0'.repeat(12), state: 'applied', identity: identityKey(host) }];
+  agent.store.save(task, true);
+  assert.equal(agent.state().tasks.find(x => x.id === task.id).recoverable, 2);
+
+  await assert.rejects(agent.remove(task.id, { clean: true }), /没有清理成功，任务未删除/);
+  assert.ok(agent.store.tasks.some(x => x.id === task.id));
+  assert.equal(agent.state().tasks.find(x => x.id === task.id).recoverable, 1);
+
+  failStaging = false;
+  const result = await agent.remove(task.id, { clean: true });
+  assert.equal(result.cleaned, 1);
+  assert.deepEqual(cleaned, ['/etc/app.conf', task.stagingChanges[0].folder]);
+  assert.ok(!agent.store.tasks.some(x => x.id === task.id));
+});
+
+test('deleting without clean leaves the server untouched', async t => {
+  const remote = fakeRemote();
+  let connected = false;
+  const factory = remote.factory;
+  remote.factory = options => { connected = true; return factory(options); };
+  const { agent } = setup(t, { script: () => reply([]), remote });
+  const task = agent.store.create({ prompt: 'x', hostIds: ['h1'], mode: 'execute' });
+  task.fileChanges = [{ id: 'w1', hostId: 'h1', path: '/a', state: 'applied', recovery: {}, identity: 'x' }];
+  await agent.remove(task.id);
+  assert.equal(connected, false);
+  assert.ok(!agent.store.tasks.some(x => x.id === task.id));
+});

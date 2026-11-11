@@ -188,10 +188,49 @@ class AgentService {
     return run.task;
   }
 
-  remove(id) {
+  // Delete a task. With clean, first remove what it left on servers: undo backups of the
+  // files it changed (the changes themselves stay) and attachment staging folders.
+  // Nothing is deleted locally if cleaning fails, so the undo records are not lost.
+  async remove(id, { clean = false, credentials = {} } = {}) {
     if (this.active?.task.id === id) throw new Error('请先暂停任务');
+    if (this.busy) throw new Error('正在处理服务器上的改动，请稍候');
+    const task = this.store.get(id);
+    const records = this.recoverable(id);
+    if (clean && records.length) {
+      const remote = this.recoveryRemote(task, records, credentials);
+      this.busy = true;
+      const failures = [];
+      try {
+        for (const record of records) {
+          try {
+            if (record.kind === 'staging') await remote.cleanStaging(record);
+            else await remote.cleanRecovery([record]);
+            record.state = 'cleaned';
+          } catch (error) {
+            failures.push(`${record.path || record.folder}：${error.message}`);
+          }
+        }
+        this.store.save(task, true);
+      } finally {
+        remote.close();
+        this.busy = false;
+      }
+      if (failures.length) throw new Error(`有 ${failures.length} 项没有清理成功，任务未删除：${failures.join('；')}`);
+    }
     this.attachments.removeTask(id);
     this.store.remove(id);
+    return { cleaned: clean ? records.length : 0 };
+  }
+
+  // A connection limited to the hosts that hold a task's undo records.
+  recoveryRemote(task, records, credentials) {
+    const routes = new Map();
+    const auth = {};
+    for (const record of records) {
+      if (!task.hostIds.includes(record.hostId) || identityKey(this.hosts.get(record.hostId)) !== record.identity) throw new Error('主机连接信息已变化，不能使用旧的撤销记录');
+      this.addRoute(record.hostId, routes, auth, credentials);
+    }
+    return this.remoteFactory({ routes, credentials: auth, verify: this.verify, signal: new AbortController().signal, recoveryId: task.id });
   }
 
   close() {
@@ -213,13 +252,7 @@ class AgentService {
     }
     if (action !== 'undo') throw new Error('未知的恢复操作');
     if (!records.length) throw new Error('没有可撤销的改动');
-    const routes = new Map();
-    const auth = {};
-    for (const record of records) {
-      if (!task.hostIds.includes(record.hostId) || identityKey(this.hosts.get(record.hostId)) !== record.identity) throw new Error('主机连接信息已变化，不能使用旧的撤销记录');
-      this.addRoute(record.hostId, routes, auth, credentials);
-    }
-    const remote = this.remoteFactory({ routes, credentials: auth, verify: this.verify, signal: new AbortController().signal, recoveryId: task.id });
+    const remote = this.recoveryRemote(task, records, credentials);
     this.busy = true;
     let restored = 0;
     const failures = [];

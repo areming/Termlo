@@ -101,6 +101,8 @@ export function createAssistantPage(element, app) {
       state = await api.agentState();
       if (currentId && state.tasks.some(t => t.id === currentId)) task = await api.agentTask(currentId);
       else if (currentId) { currentId = null; task = null; }
+      // A wrong password typed for this session must be asked again next time.
+      if (task?.status === 'failed' && /认证|登录|authentication/i.test(task.notice || '')) app.forgetCredentials(task.hostIds);
       draw();
     } catch (error) { fail(error); }
   }
@@ -121,6 +123,9 @@ export function createAssistantPage(element, app) {
     const keepFocus = document.activeElement?.id === 'assistant-input';
     const caret = keepFocus ? document.activeElement.selectionStart : null;
     if (!state.settings.baseUrl || !state.settings.model || state.settings.keyBroken) render(root, setupView());
+    // A task is being opened but its detail has not arrived yet: don't fall back to the
+    // new-task view, which would recreate `composing` and keep the page there.
+    else if (currentId && !task && !composing) render(root, html`${header()}<div class="files-state"><span class="spinner"></span></div>`);
     else if (composing || !task) render(root, composeView());
     else render(root, taskView());
     const stream = $('.stream', root);
@@ -357,13 +362,26 @@ export function createAssistantPage(element, app) {
       </article>`;
   }
 
+  // ---- credentials ----------------------------------------------------------------------
+  async function secrets(hostIds) {
+    const result = {};
+    for (const hostId of hostIds) {
+      const entry = await app.credentials(hostId);
+      if (!entry) return null;
+      Object.assign(result, entry);
+    }
+    return result;
+  }
+
   // ---- actions ------------------------------------------------------------------------------
   async function start(form) {
     const prompt = form.prompt.value.trim();
     if (!prompt) return;
     if (!composing.hostIds.length) { toast('请先选择主机', { tone: 'warning' }); return $('[data-action="pick-hosts"]', root)?.focus(); }
+    const credentials = await secrets(composing.hostIds);
+    if (!credentials) return;
     try {
-      const { id } = await api.agentStart({ prompt, hostIds: composing.hostIds, mode: composing.mode, attachmentIds: composing.attachments.map(a => a.id) });
+      const { id } = await api.agentStart({ prompt, hostIds: composing.hostIds, mode: composing.mode, attachmentIds: composing.attachments.map(a => a.id), credentials });
       draft = '';
       openTask(id);
     } catch (error) { fail(error); }
@@ -376,7 +394,9 @@ export function createAssistantPage(element, app) {
         if (!text) return;
         await api.agentFollowup({ id: task.id, message: text });
       } else {
-        await api.agentResume({ id: task.id, message: text });
+        const credentials = await secrets(task.hostIds);
+        if (!credentials) return;
+        await api.agentResume({ id: task.id, message: text, credentials });
       }
       draft = '';
       scheduleRefresh();
@@ -390,7 +410,9 @@ export function createAssistantPage(element, app) {
       const text = form.querySelector(`[name="t-${q.id}"]`)?.value.trim() || '';
       return { questionId: q.id, ...(choice ? { optionIndex: Number(choice.value) } : {}), ...(text ? { text } : {}) };
     });
-    try { await api.agentAnswer({ id: task.id, requestId: request.id, answers }); scheduleRefresh(); }
+    const credentials = await secrets(task.hostIds);
+    if (!credentials) return;
+    try { await api.agentAnswer({ id: task.id, requestId: request.id, answers, credentials }); scheduleRefresh(); }
     catch (error) { fail(error); }
   }
 
@@ -407,10 +429,75 @@ export function createAssistantPage(element, app) {
     draw();
   }
 
+  async function removeTask(id) {
+    const summary = state.tasks.find(t => t.id === id);
+    if (!summary) return false;
+    let clean = false;
+    if (summary.recoverable) {
+      const { value } = await dialog({
+        title: `删除「${summary.title}」？`,
+        body: html`
+          <p>这个任务在服务器上还留有 ${summary.recoverable} 项撤销备份或附件暂存文件。</p>
+          <p class="text-muted">清理会删掉这些备份和暂存文件；任务做过的改动保持不变，但之后不能再撤销。只删除记录则服务器上的文件原样保留。</p>`,
+        actions: [
+          { label: '取消', value: 'cancel', tone: 'ghost' },
+          { label: '只删除记录', value: 'local' },
+          { label: '清理服务器并删除', value: 'clean', tone: 'primary' },
+        ],
+      });
+      if (value !== 'clean' && value !== 'local') return false;
+      clean = value === 'clean';
+    } else if (!(await confirm({ title: `删除「${summary.title}」？`, text: '只删除本机上的任务记录，不影响服务器。', action: '删除任务' }))) return false;
+    const credentials = clean ? await secrets(summary.hostIds) : {};
+    if (!credentials) return false;
+    try {
+      const result = await api.agentRemove({ id, clean, credentials });
+      toast(clean ? `已清理 ${result.cleaned} 项并删除任务` : '已删除任务', { tone: 'success' });
+      if (id === currentId) { currentId = null; task = null; }
+      await refresh();
+      return true;
+    } catch (error) { fail(error); refresh(); return false; }
+  }
+
+  async function manageTasks() {
+    let removeId = null;
+    await dialog({
+      title: '全部任务',
+      wide: true,
+      body: html`
+        <div class="input-group">${ico('search')}<input class="input" id="task-filter" type="text" placeholder="按目标或主机筛选…" aria-label="筛选任务" autocomplete="off"></div>
+        <ul class="list task-list" id="task-list" aria-label="任务"></ul>`,
+      actions: [],
+      onOpen(element) {
+        const input = $('#task-filter', element), list = $('#task-list', element);
+        const draw = () => {
+          const q = input.value.trim().toLowerCase();
+          const rows = state.tasks.filter(t => !q || [t.title, t.prompt, ...t.hostIds.map(app.hostLabel)].join(' ').toLowerCase().includes(q));
+          render(list, rows.length ? html`${rows.map(t => html`
+            <li class="row">
+              <button class="row-button" type="button" data-open-task="${t.id}">
+                <span class="row-main"><span class="row-title truncate">${t.title}</span><span class="row-meta">${t.hostIds.map(app.hostLabel).join('、')} · ${when(t.updatedAt)}${t.recoverable ? ` · 服务器上留有 ${t.recoverable} 项备份` : ''}</span></span>
+                <span class="badge ${STATUS[t.status]?.[1] ? 'badge-' + STATUS[t.status][1] : ''}">${STATUS[t.status]?.[0] || t.status}</span>
+              </button>
+              <div class="quick-actions"><button class="btn btn-icon btn-sm btn-ghost" type="button" data-remove-task="${t.id}" aria-label="删除 ${t.title}" title="删除" ${t.id === state.activeId ? raw('disabled') : ''}>${ico('trash', 'sm')}</button></div>
+            </li>`)}` : html`<li class="row"><span class="text-muted">${state.tasks.length ? '没有匹配的任务' : '还没有任务'}</span></li>`);
+        };
+        input.addEventListener('input', draw);
+        on(list, 'click', '[data-open-task]', (_e, button) => { currentId = button.dataset.openTask; composing = null; element.close(); });
+        on(list, 'click', '[data-remove-task]', (_e, button) => { removeId = button.dataset.removeTask; element.close(); });
+        draw();
+        input.focus();
+      },
+    });
+    if (removeId) {
+      if (await removeTask(removeId) && state.tasks.length) manageTasks();
+    } else refresh();
+  }
+
   function taskMenu(button) {
     menu(button, [
-      ...state.tasks.slice(0, 15).map(t => ({ label: `${t.title} · ${STATUS[t.status]?.[0] || ''}`, icon: t.id === currentId ? 'check' : 'assistant', run: () => openTask(t.id) })),
-      ...(state.tasks.length ? ['separator'] : []),
+      ...state.tasks.slice(0, 8).map(t => ({ label: `${t.title} · ${STATUS[t.status]?.[0] || ''}`, icon: t.id === currentId ? 'check' : 'assistant', run: () => openTask(t.id) })),
+      ...(state.tasks.length ? ['separator', { label: `全部任务（${state.tasks.length}）…`, icon: 'view-list', run: manageTasks }] : []),
       { label: '新任务', icon: 'plus', run: () => { composing = { hostIds: task?.hostIds || [], mode: 'plan', attachments: [] }; draft = ''; draw(); } },
     ]);
   }
@@ -431,6 +518,21 @@ export function createAssistantPage(element, app) {
     else send(form);
   });
   on(root, 'click', '[data-task]', (_e, button) => openTask(button.dataset.task));
+  // Drop files on the new-task composer to attach them.
+  root.addEventListener('dragover', event => {
+    if (!composing || !event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    $('.composer', root)?.setAttribute('data-drop', 'true');
+  });
+  root.addEventListener('dragleave', event => { if (!root.contains(event.relatedTarget)) $('.composer', root)?.removeAttribute('data-drop'); });
+  root.addEventListener('drop', async event => {
+    if (!composing) return;
+    event.preventDefault();
+    $('.composer', root)?.removeAttribute('data-drop');
+    const paths = [...(event.dataTransfer?.files || [])].map(file => api.pathForFile(file)).filter(Boolean);
+    if (!paths.length) return;
+    try { composing.attachments.push(...await api.agentAddAttachments(paths)); draw(); } catch (error) { fail(error); }
+  });
   on(root, 'click', '[data-drop]', (_e, button) => { api.agentDropAttachment(button.dataset.drop).catch(() => {}); composing.attachments = composing.attachments.filter(a => a.id !== button.dataset.drop); draw(); });
   on(root, 'click', '[data-copy]', (_e, button) => api.writeClipboard(button.dataset.copy).then(() => toast('已复制')).catch(fail));
   on(root, 'click', '[data-action]', async (event, button) => {
@@ -447,13 +549,25 @@ export function createAssistantPage(element, app) {
     if (!task) return;
     try {
       if (action === 'pause') { await api.agentPause(task.id); return scheduleRefresh(); }
-      if (action === 'execute') { await api.agentExecutePlan({ id: task.id, revision: Number(button.dataset.revision) }); return scheduleRefresh(); }
+      if (action === 'execute') {
+        const credentials = await secrets(task.hostIds);
+        if (!credentials) return;
+        await api.agentExecutePlan({ id: task.id, revision: Number(button.dataset.revision), credentials });
+        return scheduleRefresh();
+      }
       if (action === 'revise') { const input = $('#assistant-input', root); input.focus(); return; }
       if (action === 'keep') { await api.agentRecover({ id: task.id, action: 'keep' }); return scheduleRefresh(); }
-      if (action === 'continue') { await api.agentResume({ id: task.id, message: '继续排查问题，先核实现场。' }); return scheduleRefresh(); }
+      if (action === 'continue') {
+        const credentials = await secrets(task.hostIds);
+        if (!credentials) return;
+        await api.agentResume({ id: task.id, message: '继续排查问题，先核实现场。', credentials });
+        return scheduleRefresh();
+      }
       if (action === 'undo') {
         if (!(await confirm({ title: '撤销本任务的文件改动？', text: '被修改过的文件会恢复成任务开始前的内容；如果文件在任务之后又被改过，会跳过它并告诉你。', action: '撤销改动', tone: 'primary' }))) return;
-        const result = await api.agentRecover({ id: task.id, action: 'undo' });
+        const credentials = await secrets(task.hostIds);
+        if (!credentials) return;
+        const result = await api.agentRecover({ id: task.id, action: 'undo', credentials });
         toast(result.failed ? `已撤销 ${result.restored} 项，${result.failed} 项未能撤销` : `已撤销 ${result.restored} 项`, { tone: result.failed ? 'warning' : 'success' });
         return scheduleRefresh();
       }
@@ -461,10 +575,7 @@ export function createAssistantPage(element, app) {
         return menu(button, [
           { label: '复制任务目标', icon: 'copy', run: () => api.writeClipboard(task.prompt).then(() => toast('已复制')) },
           'separator',
-          { label: '删除任务…', icon: 'trash', danger: true, run: async () => {
-            if (!(await confirm({ title: '删除这个任务？', text: '只删除本机上的任务记录，不影响服务器。', action: '删除任务' }))) return;
-            try { await api.agentRemove(task.id); currentId = null; task = null; refresh(); } catch (error) { fail(error); }
-          } },
+          { label: '删除任务…', icon: 'trash', danger: true, run: () => removeTask(task.id) },
         ]);
       }
     } catch (error) { fail(error); scheduleRefresh(); }

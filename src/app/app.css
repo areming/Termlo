@@ -136,3 +136,7 @@
 .settings-card { display: grid; gap: var(--sp-4); }
 .preset-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
 .settings-actions { justify-content: flex-end; }
+
+/* ---- assistant: drop target and task manager ------------------------------------------ */
+.composer[data-drop="true"] { outline: var(--stroke-bold) dashed var(--accent); outline-offset: var(--focus-offset); }
+.task-list { margin-top: var(--sp-3); max-height: calc(var(--sp-8) * 12); overflow: auto; }
