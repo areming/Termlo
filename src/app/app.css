@@ -184,6 +184,8 @@
   transition: height var(--dur-slow) var(--ease-out);
 }
 .rail-item[aria-current="page"]::before { height: calc(var(--sp-6) - var(--sp-1)); }
+/* A newer release is out: a small dot on 设置. */
+.rail-item[data-update="true"]::after { content: ''; position: absolute; top: 6px; right: calc(50% - 15px); width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
 
 .page-title { align-items: center; }
 .online-count {
@@ -700,6 +702,7 @@ input, textarea, [contenteditable="true"], .xterm, .msg, .output, pre, code, .de
 /* Read-only rows (safety notes) are not clickable. */
 div.setting { cursor: default; }
 .settings-about { gap: var(--sp-1); }
+.text-accent { color: var(--accent-text); }
 
 /* Connection route under the jump picker: 本机 › bastion › gateway › host */
 .route-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-1); margin: var(--sp-1) 0 0; color: var(--muted); font-size: var(--fs-xs); }

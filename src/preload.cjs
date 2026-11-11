@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const methods = [
-  'init', 'savePreferences', 'answerPrompt',
+  'init', 'savePreferences', 'answerPrompt', 'checkUpdate', 'openRelease',
   'saveHost', 'setHostGroup', 'deleteHost', 'pickKey', 'previewSshConfig', 'importSshConfig',
   'connect', 'connectFiles', 'disconnect', 'resize',
   'listRemote', 'mkdirRemote', 'renameRemote', 'removeRemote',

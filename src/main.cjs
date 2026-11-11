@@ -1,5 +1,5 @@
 // Termlo 2.0 main process: hosts, terminals, files, assistant, settings.
-const { app, BrowserWindow, ipcMain, dialog, safeStorage, clipboard, Menu, shell, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, safeStorage, clipboard, Menu, shell, Tray, nativeImage, net } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -16,6 +16,7 @@ const { identityKey, probeInventory } = require('./host-os.cjs');
 const { resolveDataDir } = require('./data-dir.cjs');
 const atomicFile = require('./atomic-file.cjs');
 const { HostMonitor } = require('./host-monitor.cjs');
+const { checkForUpdate, releaseUrl } = require('./update-check.cjs');
 
 app.setName('Termlo');
 const root = path.join(__dirname, '..');
@@ -69,6 +70,8 @@ function savePreferences(input) {
   if (typeof input.terminalHighlights === 'boolean') next.terminalHighlights = input.terminalHighlights;
   if (typeof input.closeToTray === 'boolean') next.closeToTray = input.closeToTray;
   if (typeof input.trayHintShown === 'boolean') next.trayHintShown = input.trayHintShown;
+  if (typeof input.updateCheck === 'boolean') next.updateCheck = input.updateCheck;
+  if (typeof input.updateSeen === 'string' && /^[\w.-]{1,40}$/.test(input.updateSeen)) next.updateSeen = input.updateSeen;
   // Card order the user dragged into place: host ids only; unknown ids are harmless and skipped.
   if (Array.isArray(input.hostOrder) && input.hostOrder.length <= 2000 && input.hostOrder.every(id => typeof id === 'string' && /^[\w-]{1,100}$/.test(id))) next.hostOrder = [...new Set(input.hostOrder)];
   const file = path.join(dataPath, 'preferences.json');
@@ -183,6 +186,29 @@ async function runTransfer(id, direction, name, run) {
   }
 }
 
+// ---- update check ---------------------------------------------------------------
+// Installed builds look for a newer release on GitHub shortly after start and twice a day; the
+// user is told and downloads it from the release page. Can be turned off in Settings.
+let update = { checking: false, result: null, error: '', checkedAt: 0 };
+async function runUpdateCheck() {
+  if (update.checking) return update;
+  update = { ...update, checking: true };
+  send({ type: 'update', update });
+  try {
+    update = { checking: false, result: await checkForUpdate({ current: app.getVersion(), fetch: net.fetch }), error: '', checkedAt: Date.now() };
+  } catch (error) {
+    update = { ...update, checking: false, error: error.message, checkedAt: Date.now() };
+  }
+  send({ type: 'update', update });
+  return update;
+}
+function scheduleUpdateChecks() {
+  if (!app.isPackaged) return;   // development and test runs never reach out on their own
+  const tick = () => { if (preferences.updateCheck !== false) runUpdateCheck(); };
+  setTimeout(tick, 15000).unref?.();
+  setInterval(tick, 12 * 60 * 60 * 1000).unref?.();
+}
+
 // ---- IPC ----------------------------------------------------------------------
 function installHandlers() {
   handle('init', () => ({
@@ -192,7 +218,14 @@ function installHandlers() {
     platform: process.platform,
     version: app.getVersion(),
     metrics: monitor.snapshot(),
+    update,
   }));
+  handle('checkUpdate', () => runUpdateCheck());
+  handle('openRelease', url => {
+    const safe = releaseUrl(url);
+    if (!safe) throw new Error('只能打开 Termlo 的发布页');
+    return shell.openExternal(safe);
+  });
   handle('savePreferences', input => {
     const saved = savePreferences(input || {});
     if (process.platform !== 'darwin') window?.setTitleBarOverlay?.(titleBarOverlay(saved.theme));
@@ -425,6 +458,7 @@ app.whenReady().then(() => {
   installHandlers();
   createWindow();
   createTray();
+  scheduleUpdateChecks();
 });
 
 // One Termlo per data directory: launching it again brings the running window back.

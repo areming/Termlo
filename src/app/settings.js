@@ -23,7 +23,13 @@ export function createSettingsPage(element, app) {
   }
 
   function draw() {
-    const { preferences, version } = store.get();
+    const { preferences, version, update } = store.get();
+    const result = update?.result;
+    const updateLine = update?.checking ? '正在检查…'
+      : update?.error ? update.error
+      : result?.newer ? `有新版本 ${result.latest}`
+      : result ? '已是最新版本'
+      : '';
     render(element, html`
       <div class="page settings-page">
         <section class="settings-section" id="settings-model" aria-labelledby="s-model">
@@ -115,7 +121,7 @@ export function createSettingsPage(element, app) {
               <span class="setting-text"><span>助手能做什么</span><span class="text-xs text-muted">拥有你所选 SSH 账户的权限，只能操作这次任务选中的主机。</span></span>
             </div>
             <div class="setting">
-              <span class="setting-text"><span>什么会发给模型</span><span class="text-xs text-muted">任务内容和命令输出。密码、私钥和常见令牌发送前会被隐藏；少于 8 个字符的密码无法可靠隐藏。</span></span>
+              <span class="setting-text"><span>什么会发给模型</span><span class="text-xs text-muted">对话内容、命令输出，以及你在终端里交给助手的屏幕内容。密码、私钥和常见令牌发送前会被隐藏；少于 8 个字符的密码无法可靠隐藏。</span></span>
             </div>
             <div class="setting">
               <span class="setting-text"><span>什么能撤销</span><span class="text-xs text-muted">只有助手用“修改文件”做的改动会自动备份、可以撤销。安装软件、启动服务等命令需要你另行检查。</span></span>
@@ -129,7 +135,17 @@ export function createSettingsPage(element, app) {
         <section class="settings-section" aria-labelledby="s-about">
           <header><h2 class="title-lg" id="s-about">关于</h2></header>
           <div class="card settings-card settings-about">
-            <p>Termlo ${version}</p>
+            <div class="setting">
+              <span class="setting-text"><span>Termlo ${version}</span>${updateLine ? html`<span class="text-xs ${result?.newer ? 'text-accent' : 'text-muted'}" aria-live="polite">${updateLine}</span>` : ''}</span>
+              <div class="btn-group">
+                ${result?.newer ? html`<button class="btn btn-sm btn-primary" type="button" data-action="open-release">${ico('download', 'sm')}下载 ${result.latest}</button>` : ''}
+                <button class="btn btn-sm" type="button" data-action="check-update" ${update?.checking ? raw('disabled aria-busy="true"') : ''}>${ico('refresh', 'sm')}检查更新</button>
+              </div>
+            </div>
+            <div class="setting">
+              <label class="setting-text" for="s-update"><span>自动检查更新</span><span class="text-xs text-muted">每天看两次 GitHub 上有没有新版本，有就提醒你；不会自动安装</span></label>
+              <input class="switch" type="checkbox" role="switch" id="s-update" ${preferences.updateCheck !== false ? raw('checked') : ''}>
+            </div>
             <p class="text-muted text-xs">本地优先：主机、密码和任务记录只保存在这台电脑上。</p>
           </div>
         </section>
@@ -164,7 +180,16 @@ export function createSettingsPage(element, app) {
   element.addEventListener('change', event => {
     if (event.target.id === 's-tray') app.setPreferences({ closeToTray: event.target.checked });
     if (event.target.id === 's-highlights') app.setPreferences({ terminalHighlights: event.target.checked });
+    if (event.target.id === 's-update') app.setPreferences({ updateCheck: event.target.checked });
   });
+  on(element, 'click', '[data-action="check-update"]', async () => {
+    const pending = api.checkUpdate();
+    store.set({ update: { ...store.get().update, checking: true } }); draw();
+    try { await pending; } catch (error) { fail(error); }
+    draw();
+  });
+  on(element, 'click', '[data-action="open-release"]', () => api.openRelease(store.get().update?.result?.url).catch(fail));
+  app.on('update', () => { if (element.isConnected && !element.closest('[hidden]')) draw(); });
   on(element, 'click', '[data-forget]', async (_e, button) => {
     if (!(await confirm({ title: '删除这条指纹记录？', text: '下次连接这台服务器时需要重新确认它的身份。', action: '删除记录' }))) return;
     try { await api.forgetHostKey(button.dataset.forget); known = await api.knownHosts(); draw(); } catch (error) { fail(error); }

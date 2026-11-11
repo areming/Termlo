@@ -49,10 +49,9 @@ const SCENARIOS = {
     check: 'curl -s --max-time 5 http://127.0.0.1:18081/ | grep -q "Termlo repaired" && echo BENCH_PASS',
     cleanup: 'docker rm -f termlo-bench-broken >/dev/null 2>&1; rm -rf /srv/termlo-bench; true',
   },
-  // Plan mode end to end: a plan is proposed, approved as-is, then executed.
+  // Plan first: the assistant proposes a plan (asked for), it is approved as is, then executed.
   S4: {
     title: '先规划再执行：修改应用配置',
-    mode: 'plan',
     prompt: '把 /srv/termlo-bench/s4/app.env 里的 PORT 改成 9090，其他行保持不变。先给方案。',
     setup: 'rm -rf /srv/termlo-bench/s4 && mkdir -p /srv/termlo-bench/s4 && printf "NAME=demo\\nPORT=8080\\nDEBUG=false\\n" > /srv/termlo-bench/s4/app.env',
     check: 'grep -qx "PORT=9090" /srv/termlo-bench/s4/app.env && grep -qx "NAME=demo" /srv/termlo-bench/s4/app.env && grep -qx "DEBUG=false" /srv/termlo-bench/s4/app.env && echo BENCH_PASS',
@@ -198,27 +197,38 @@ async function runScenario(id) {
   let task;
   let followUp = '';
   try {
-    task = await agent.start({ prompt: scenario.prompt, hostIds: [HOST_ID], mode: scenario.mode || 'execute' });
-    const timer = setTimeout(() => agent.active && agent.pause(agent.active.task.id), TASK_TIMEOUT_MS);
-    await agent.active?.done;
-    // Answer questions like a user who accepts the suggestions; in plan mode, approve the plan as proposed.
-    const asked = [];
-    for (let i = 0; i < 4; i++) {
+    // The app's own mode: one conversation that decides when to plan.
+    task = await agent.start({ prompt: scenario.prompt, hostIds: [HOST_ID], mode: scenario.mode || 'auto' });
+    const timer = setTimeout(() => { const run = agent.runs.get(task.id); if (run) agent.pause(task.id); }, TASK_TIMEOUT_MS);
+    const settle = () => agent.runs.get(task.id)?.done;
+    await settle();
+    // Act like a user who accepts the assistant's suggestions: answer questions with the recommended
+    // option, run a proposed plan as is, allow what the risk gate holds, and when the assistant stops
+    // to check in while the job is not done yet, tell it to go ahead.
+    const asked = [], allowed = [], nudged = [];
+    for (let i = 0; i < 10 && !scenario.interrupt; i++) {
       task = agent.task(task.id);
-      if (task.interaction?.status === 'pending') {
-        asked.push(task.interaction.questions.map(q => q.question || q.text || '').join(' / '));
-        agent.answer({ id: task.id, requestId: task.interaction.id, answers: task.interaction.questions.map(q => q.options.length
+      const pending = task.interaction?.status === 'pending' ? task.interaction : null;
+      if (pending?.kind === 'approval') {
+        allowed.push(`${pending.reason}：${pending.command || pending.path}`.slice(0, 160));
+        agent.approve({ id: task.id, requestId: pending.id, allow: true });
+      } else if (pending?.questions) {
+        asked.push(pending.questions.map(q => q.question || q.text || '').join(' / '));
+        agent.answer({ id: task.id, requestId: pending.id, answers: pending.questions.map(q => q.options.length
           ? { questionId: q.id, optionIndex: q.recommendedOption ?? 0 }
           : { questionId: q.id, text: '按你的建议处理。' }) });
-      } else if (scenario.mode === 'plan' && task.status === 'plan_ready' && task.proposal) {
+      } else if (task.status === 'plan_ready' && task.proposal && !task.proposal.questions?.length) {
         followUp = `方案 v${task.proposal.revision}：${task.proposal.steps.length} 步`;
         agent.executePlan({ id: task.id, revision: task.proposal.revision });
+      } else if (task.status === 'awaiting_reply' && nudged.length < 2 && !(await hostExec(scenario.check)).output.includes('BENCH_PASS')) {
+        nudged.push(String(task.events.filter(e => e.type === 'assistant').at(-1)?.content || '').slice(0, 120));
+        agent.resume({ id: task.id, message: '按你的建议处理，直接做完。' });
       } else break;
-      await agent.active?.done;
+      await settle();
     }
     clearTimeout(timer);
     task = agent.task(task.id);
-    if (asked.length) followUp = [followUp, '提问：' + asked.join('；')].filter(Boolean).join('；');
+    followUp = [followUp, asked.length && '提问：' + asked.join('；'), allowed.length && '确认：' + allowed.join('；'), nudged.length && `回复"做完"${nudged.length} 次`].filter(Boolean).join('；');
     if (scenario.interrupt) {
       if (!interrupted) followUp = '没有改过文件就结束了，未能测试中断';
       else if (scenario.interrupt === 'undo') {
@@ -289,6 +299,8 @@ function summarize(label, results) {
     '| 场景 | 结果 | 状态 | 轮数 | tokens | 缓存命中 | 耗时 s | 首响 s | 平均每轮 s | 工具调用 | 工具出错 | 守卫拦截 | 模型 |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ...results.map(r => `| ${r.id} ${r.title} | ${r.passed ? '✅' : '❌'} | ${r.status} | ${r.rounds} | ${r.tokens} | ${r.promptTokens ? Math.round(r.cachedTokens / r.promptTokens * 100) + '%' : '-'} | ${r.durationSec} | ${r.firstResponseSec ?? '-'} | ${r.avgCallSec ?? '-'} | ${r.toolCalls} | ${r.toolErrors} | ${r.guardBlocks} | ${r.models.join(', ')} |`),
+    '',
+    ...results.filter(r => r.followUp).map(r => `- ${r.id}：${r.followUp}`),
     '',
     `合计：通过 ${results.filter(r => r.passed).length}/${results.length} · ${results.reduce((s, r) => s + r.rounds, 0)} 轮 · ${results.reduce((s, r) => s + r.tokens, 0)} tokens · ${results.reduce((s, r) => s + r.durationSec, 0)} s`,
   ];

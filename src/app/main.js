@@ -267,11 +267,23 @@ const search = (() => {
   return { bind, reset, focus: () => { input().focus(); input().select(); } };
 })();
 
+// ---- update check ---------------------------------------------------------------------
+// A newer release: a dot on 设置, and one toast per version (the details stay in Settings → 关于).
+function updateArrived(update) {
+  store.set({ update });
+  const result = update?.result;
+  const rail = $('.rail-item[data-page="settings"]');
+  if (rail) rail.dataset.update = String(!!result?.newer);
+  if (!result?.newer || store.get().preferences.updateSeen === result.latest) return;
+  setPreferences({ updateSeen: result.latest });
+  toast(`Termlo ${result.latest} 可以更新了`, { action: '查看', onAction: () => api.openRelease(result.url).catch(fail), timeout: 15000 });
+}
+
 // ---- boot -----------------------------------------------------------------------------
 async function boot() {
   renderShell();
   const initial = await api.init();
-  store.set({ hosts: initial.hosts, preferences: initial.preferences, version: initial.version });
+  store.set({ hosts: initial.hosts, preferences: initial.preferences, version: initial.version, update: initial.update });
   document.documentElement.dataset.platform = initial.platform;   // window buttons sit in our top bar
   for (const metrics of initial.metrics || []) app.telemetry.accept(metrics);
   applyTheme();
@@ -287,6 +299,7 @@ async function boot() {
   api.onEvent(event => {
     if (event.type === 'hosts') store.set({ hosts: event.hosts });
     if (event.type === 'navigate') navigate(event.page, event.params);   // from the tray menu
+    if (event.type === 'update') updateArrived(event.update);
     if (event.type === 'app-prompt') showPrompt(event);
     if (event.type === 'app-prompt-closed') { const element = openPrompts.get(event.id); openPrompts.delete(event.id); element?.close(); }
     for (const handler of listeners.get(event.type) || []) handler(event);
@@ -304,6 +317,7 @@ async function boot() {
     toast(`已从旧版本导入${migrated.hosts ? ` ${migrated.hosts} 台其他项目的主机` : ''}${migrated.settings ? '和模型设置' : ''}。`, { tone: 'success', timeout: 8000 });
   }
 
+  if (initial.update?.result) updateArrived(initial.update);
   navigate(location.hash.slice(1) || 'hosts');
   document.documentElement.dataset.ready = 'true';
 }

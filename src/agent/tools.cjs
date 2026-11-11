@@ -53,7 +53,7 @@ const TOOLS = {
       outcome: { type: 'string', enum: ['completed', 'needs_input'] },
       headline: text('一句话结论', 120),
       summary: text('简洁的完整报告', 8000),
-      checks: { type: 'array', maxItems: 8, items: { type: 'object', properties: { label: text('检查项', 120), status: { type: 'string', enum: ['passed', 'failed', 'unknown'] }, hostId }, required: ['label', 'status'], additionalProperties: false } },
+      checks: { type: 'array', maxItems: 8, items: { type: 'object', properties: { label: text('检查项：目标是否达成，并且已在服务器上实际查过。没有执行的验证（如重启主机）不要列为检查项，写进 summary', 120), status: { type: 'string', enum: ['passed', 'failed', 'unknown'] }, hostId }, required: ['label', 'status'], additionalProperties: false } },
       artifacts: { type: 'array', maxItems: 8, items: { type: 'object', properties: { label: text('名称', 80), value: text('地址、路径或版本，不含凭据', 1000), hostId }, required: ['label', 'value'], additionalProperties: false } },
     },
     ['outcome', 'headline', 'summary', 'checks']),
