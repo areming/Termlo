@@ -90,6 +90,7 @@ export function createAssistantPage(element, app) {
   let currentId = null;
   let composing = null;       // { hostIds, prompt, mode, attachments }
   let refreshTimer = null;
+  let thinking = null;        // { taskId, events, text }: live preview of the model's reasoning, cleared by the next event
   let draft = '';
 
   render(element, html`<div class="assistant-page" id="assistant-root"></div>`);
@@ -219,7 +220,7 @@ export function createAssistantPage(element, app) {
           <div class="stream" aria-live="polite">
             ${task.events.map(event => streamItem(event))}
             ${runningTool && toolLabel(runningTool) ? html`<p class="msg-step"><span class="spinner"></span>正在${toolLabel(runningTool)}…</p>` : ''}
-            ${running && !runningTool && !task.events.at(-1)?.streaming ? html`<p class="msg-step"><span class="spinner"></span>思考中…</p>` : ''}
+            ${running && !runningTool && !task.events.at(-1)?.streaming ? thinkingStep() : ''}
             ${task.recovery ? recoveryCard() : ''}
             ${task.notice && !running && task.status !== 'completed' && !task.events.some(e => (e.type === 'notice' && e.content === task.notice) || (e.type === 'result' && e.report?.headline === task.notice)) ? html`<p class="msg-step" data-tone="warning">${ico('status-warning')}${task.notice}</p>` : ''}
           </div>
@@ -582,6 +583,27 @@ export function createAssistantPage(element, app) {
   });
 
   app.on('agent', event => { if (!event.taskId || event.taskId === currentId) scheduleRefresh(); else if (!element.hidden) scheduleRefresh(); });
+  // "思考中… 12 秒" with the latest line of the model's reasoning, updated in place.
+  function thinkingStep() {
+    const since = Date.parse(task.events.at(-1)?.at || '') || Date.now();
+    const preview = thinking?.taskId === task.id && thinking.events === task.events.length ? thinking.text : '';
+    return html`<div class="msg-step thinking-step" data-thinking data-since="${since}">
+      <span class="spinner"></span><span>思考中…<span class="text-muted" data-elapsed>${elapsed(since)}</span></span>
+      <span class="thinking-preview text-muted truncate" data-thinking-preview>${preview}</span>
+    </div>`;
+  }
+  const elapsed = since => { const s = Math.floor((Date.now() - since) / 1000); return s >= 3 ? ` ${s} 秒` : ''; };
+  setInterval(() => {
+    const step = $('[data-thinking]', root);
+    if (step) $('[data-elapsed]', step).textContent = elapsed(Number(step.dataset.since));
+  }, 1000);
+  app.on('agent-thinking', event => {
+    if (event.taskId !== currentId || !task) return;
+    thinking = { taskId: task.id, events: task.events.length, text: event.preview };
+    const target = $('[data-thinking-preview]', root);
+    if (target) target.textContent = event.preview;
+  });
+
   app.on('agent-delta', event => {
     if (event.taskId !== currentId) return;
     const target = $(`[data-event="${event.eventId}"]`, root);

@@ -30,7 +30,7 @@ function system(mode) {
 function tail({ task, hosts, roundsLeft, unverified, approvedPlan }) {
   const lines = [
     '[当前状态 · 系统自动附加，非用户消息]',
-    `时间 ${new Date().toISOString()} · 剩余模型调用 ${roundsLeft}`,
+    `时间 ${new Date().toISOString()} · 剩余模型调用 ${roundsLeft} · 说明和报告用中文`,
     `主机：${hosts.map(h => `${h.id}（${h.name} ${h.address}${h.os ? ' · ' + h.os : ''}）`).join('；') || '无'}`,
   ];
   if (task.attachments?.length) {

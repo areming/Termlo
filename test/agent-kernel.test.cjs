@@ -504,3 +504,35 @@ test('write_file points out a dropped final newline', async t => {
   assert.equal(results[2].notice, undefined);
   assert.equal(remote.files.get('/etc/app.env'), 'PORT=9090\n');
 });
+
+test('reasoning streams as a redacted, throttled preview and is not stored in the task', async t => {
+  const notes = [];
+  const { agent } = setup(t, {
+    password: 'a-much-longer-secret-value',
+    script: async (round, options) => {
+      if (round === 0) {
+        options.onReasoning('先看看服务器上的容器和端口。\n');
+        options.onReasoning('第二段');                                   // within 250 ms: throttled
+        await new Promise(resolve => setTimeout(resolve, 300));
+        options.onReasoning('密码是 a-much-longer-secret-value，');
+        return reply([call('finish', { outcome: 'completed', headline: '完成', summary: '完成', checks: [{ label: '检查', status: 'passed' }] })]);
+      }
+    },
+  });
+  agent.notify = event => { if (event.type === 'agent-thinking') notes.push(event); };
+  const task = await runTask(agent, { prompt: '检查' });
+  agent.notify = () => {};
+  assert.equal(notes.length, 2);
+  assert.equal(notes[0].preview, '先看看服务器上的容器和端口。');
+  assert.match(notes[1].preview, /^第二段密码是 /);
+  assert.ok(!notes[1].preview.includes('secret-value'));
+  assert.ok(!JSON.stringify(agent.store.get(task.id).events).includes('先看看服务器'));
+});
+
+test('the stream accumulator hands reasoning to onReasoning', () => {
+  const seen = [];
+  const acc = accumulator(() => {}, text => seen.push(text));
+  acc.add({ choices: [{ delta: { reasoning: '想一想' } }] });
+  acc.add({ choices: [{ delta: { reasoning_content: '再想' } }] });
+  assert.deepEqual(seen, ['想一想', '再想']);
+});

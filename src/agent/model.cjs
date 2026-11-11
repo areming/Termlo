@@ -37,7 +37,8 @@ function sseParser(onData) {
 }
 
 // Accumulates streamed deltas into one assistant message.
-function accumulator(onText) {
+// onReasoning receives the model's thinking as it streams (shown live, never stored as an answer).
+function accumulator(onText, onReasoning = () => {}) {
   const state = { content: '', reasoning: '', calls: [], finish: null, usage: null, error: null };
   return {
     state,
@@ -50,7 +51,7 @@ function accumulator(onText) {
       const delta = choice.delta || choice.message || {};
       if (typeof delta.content === 'string' && delta.content) { state.content += delta.content; onText(delta.content); }
       const reasoning = delta.reasoning_content ?? delta.reasoning;
-      if (typeof reasoning === 'string') state.reasoning += reasoning;
+      if (typeof reasoning === 'string' && reasoning) { state.reasoning += reasoning; onReasoning(reasoning); }
       for (const [position, part] of (delta.tool_calls || []).entries()) {
         const index = Number.isInteger(part.index) ? part.index : position;
         const call = state.calls[index] ||= { id: '', type: 'function', function: { name: '', arguments: '' } };
@@ -90,7 +91,7 @@ function finalize(state) {
   };
 }
 
-function complete({ baseUrl, model, apiKey, messages, tools, signal, onText = () => {} }) {
+function complete({ baseUrl, model, apiKey, messages, tools, signal, onText = () => {}, onReasoning = () => {} }) {
   const url = new URL(endpoint(baseUrl));
   const body = JSON.stringify({
     model,
@@ -99,7 +100,7 @@ function complete({ baseUrl, model, apiKey, messages, tools, signal, onText = ()
     stream_options: { include_usage: true },
     ...(tools?.length ? { tools, tool_choice: 'auto' } : {}),
   });
-  const { state, add } = accumulator(onText);
+  const { state, add } = accumulator(onText, onReasoning);
 
   return new Promise((resolve, reject) => {
     let settled = false;

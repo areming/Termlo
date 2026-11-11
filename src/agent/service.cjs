@@ -453,10 +453,20 @@ class AgentService {
     const messages = this.context(run);
     for (let attempt = 1; ; attempt++) {
       let event = null;
+      let thinking = '', thinkingSent = 0;
       try {
         const result = await this.complete({
           baseUrl: settings.baseUrl, model: settings.model, apiKey: run.key, messages, tools,
           signal: controller.signal,
+          // Live thinking preview: a redacted rolling window, last line only, at most ~4 updates a second.
+          onReasoning: text => {
+            thinking = (thinking + text).slice(-400);
+            const now = Date.now();
+            if (now - thinkingSent < 250 || (!thinkingSent && thinking.trim().length < 12)) return;
+            thinkingSent = now;
+            const line = run.redact.text(thinking).split('\n').map(l => l.trim()).filter(Boolean).at(-1) || '';
+            this.notify({ type: 'agent-thinking', taskId: task.id, preview: line.slice(-120) });
+          },
           onText: text => {
             if (!event) event = this.event(task, 'assistant', '', { streaming: true });
             const safe = run.redact.text(text);
