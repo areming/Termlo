@@ -293,7 +293,7 @@
 .terminal-pane .xterm-viewport, .terminal-pane .xterm-scrollable-element { background-color: var(--terminal-bg) !important; }
 /* xterm draws its own scrollbar; the viewport's native one only adds arrow buttons in the corner. */
 .terminal-pane .xterm-viewport { scrollbar-width: none; }
-.terminal-pane .xterm-scrollable-element > .scrollbar > .slider { background: color-mix(in srgb, var(--text) 22%, transparent) !important; border-radius: 4px; }
+.terminal-pane .xterm-scrollable-element > .scrollbar > .slider { background: color-mix(in srgb, var(--text) 22%, transparent) !important; border-radius: var(--r-sm); }
 .terminal-pane .xterm-scrollable-element > .scrollbar > .slider:hover, .terminal-pane .xterm-scrollable-element > .scrollbar > .slider.active { background: color-mix(in srgb, var(--text) 36%, transparent) !important; }
 .terminal-status {
   display: flex; align-items: center; gap: var(--sp-4); min-height: 30px; padding: 0 var(--sp-4);
@@ -642,7 +642,7 @@
 .terminal-tab { padding-right: 6px; }
 .tab-close {
   display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; padding: 0;
-  border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer;
+  border: 0; border-radius: var(--r-sm); background: transparent; color: var(--muted); cursor: pointer;
   opacity: 0; transition: opacity var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 .tab-close .icon { width: 12px; height: 12px; }
@@ -804,3 +804,35 @@ div.setting { cursor: default; }
   .glyph-spinner::before { animation: none; }
   .shimmer { animation: none; background: none; color: var(--muted); }
 }
+
+/* ---- getting started (hosts page) and 使用说明 ------------------------------------ */
+.welcome { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); max-width: 600px; margin: 9vh auto 0; text-align: center; }
+.welcome-logo { width: 64px; height: 64px; margin-bottom: var(--sp-2); }
+.welcome-title { margin: 0; font-size: var(--fs-xl); font-weight: 600; }
+.welcome-text { margin: 0 0 var(--sp-4); color: var(--muted); }
+.guide-steps { list-style: none; margin: 0 0 var(--sp-2); padding: var(--sp-1) var(--sp-4); width: 100%; text-align: left; }
+.guide-step { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-4) 0; }
+.guide-step + .guide-step { border-top: 1px solid var(--line); }
+.guide-step-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.guide-step-title { font-weight: 600; }
+.guide-step[data-done="true"] .guide-step-title { color: var(--muted); font-weight: 400; }
+.guide-mark { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line-strong); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; font-variant-numeric: tabular-nums; }
+.guide-mark[data-done="true"] { border-color: transparent; background: var(--accent-soft); color: var(--accent-text); }
+.guide-mark .icon { width: 14px; height: 14px; }
+.guide-steps code, .guide-strip code, .help-list code { font-family: var(--font-mono); font-size: 0.95em; padding: 0 4px; border-radius: var(--r-sm); background: var(--surface-inset); color: var(--accent-text); }
+.guide-strip { display: flex; align-items: flex-start; gap: var(--sp-4); padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4); }
+.guide-progress { flex: none; margin-top: 6px; padding: 2px var(--sp-2); border-radius: var(--r-sm); background: var(--accent-soft); color: var(--accent-text); font-size: var(--fs-xs); font-weight: 600; font-variant-numeric: tabular-nums; }
+.guide-strip-steps { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.guide-strip-step { display: flex; align-items: center; gap: var(--sp-3); }
+.guide-strip-step > .icon { flex: none; color: var(--accent-text); }
+.link-button { margin-left: var(--sp-2); padding: 0; border: 0; background: none; color: var(--accent-text); font: inherit; cursor: pointer; }
+.link-button:hover { text-decoration: underline; }
+.link-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.help-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5) var(--sp-6); }
+.help-title { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 var(--sp-2); font-size: var(--fs-md); font-weight: 600; }
+.help-title .icon { color: var(--accent-text); }
+.help-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: var(--sp-1); color: var(--muted); line-height: 1.6; }
+.help-list li::marker { color: var(--line-strong); }
+.help-list .kbd { margin: 0 1px; }
+.help-foot { margin: var(--sp-5) 0 0; }
+@media (max-width: 1100px) { .help-grid { grid-template-columns: minmax(0, 1fr); } }

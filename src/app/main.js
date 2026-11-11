@@ -7,6 +7,7 @@ import { createFilesPage } from './files.js';
 import { createAssistantPage } from './assistant.js';
 import { createSettingsPage } from './settings.js';
 import { createTelemetry } from './telemetry.js';
+import { openHelp } from './guide.js';
 
 const PAGES = [
   { id: 'hosts', label: '主机', icon: 'host' },
@@ -50,6 +51,7 @@ function renderShell() {
         <input id="global-search" type="text" role="combobox" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list" aria-keyshortcuts="Control+K" aria-label="搜索主机或操作" placeholder="搜索主机或操作…" autocomplete="off" spellcheck="false">
         <kbd class="kbd">Ctrl K</kbd>
       </div>
+      <button class="btn btn-ghost btn-icon" type="button" id="help-button" aria-label="使用说明" title="使用说明">${ico('question')}</button>
       <button class="btn btn-ghost btn-icon" type="button" id="theme-toggle"></button>
     </header>
     <main class="content" id="main" tabindex="-1">
@@ -191,6 +193,7 @@ const search = (() => {
     { label: '添加主机', icon: 'plus', run: () => navigate('hosts', { add: true }) },
     { label: '新建助手任务', icon: 'assistant', run: () => navigate('assistant', { compose: true }) },
     { label: '模型设置', icon: 'settings', run: () => navigate('settings', { section: 'model' }) },
+    { label: '使用说明', icon: 'question', run: () => openHelp() },
     { label: '切换主题', icon: store.get().preferences.theme === 'light' ? 'moon' : 'sun', run: () => setPreferences({ theme: store.get().preferences.theme === 'light' ? 'dark' : 'light' }) },
   ];
   const filtering = () => store.get().page === 'hosts';
@@ -305,6 +308,7 @@ async function boot() {
     for (const handler of listeners.get(event.type) || []) handler(event);
   });
 
+  $('#help-button').addEventListener('click', () => openHelp());
   $('#theme-toggle').addEventListener('click', () => setPreferences({ theme: store.get().preferences.theme === 'light' ? 'dark' : 'light' }));
   search.bind();
   on($('.rail'), 'click', '[data-page]', (event, item) => { event.preventDefault(); navigate(item.dataset.page); });

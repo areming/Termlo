@@ -2,6 +2,7 @@
 import { api, html, raw, ico, render, $, $$, on, dialog, confirm, toast, fail, menu, contextMenu, selectable, bytes } from './ui.js';
 import { view } from './telemetry.js';
 import { orderHosts, moveHost } from './host-order.mjs';
+import { guideFacts, guideSteps, welcome, strip, openHelp } from './guide.js';
 
 const OS_LABEL = host => host.operatingSystem?.name || '';
 
@@ -9,6 +10,7 @@ export function createHostsPage(element, app) {
   const { store } = app;
   let group = '全部';
   let shownOnline = new Set();   // hosts drawn as online in the last render
+  let facts = null;              // model configured / asked in a terminal: read when the page shows
 
   function connectedIds() {
     return new Set(store.get().hosts.map(h => h.id).filter(id => app.telemetry.online(id)));
@@ -136,21 +138,10 @@ export function createHostsPage(element, app) {
   function draw() {
     const { hosts, preferences } = store.get();
     const view = preferences.hostView || 'grid';
-    if (!hosts.length) {
-      render(element, html`
-        <div class="page">
-          <div class="card empty empty-page">
-            <span class="empty-icon">${ico('host', 'lg')}</span>
-            <h2 class="empty-title">添加第一台服务器</h2>
-            <p class="empty-text">终端、文件和助手都从这里开始</p>
-            <div class="btn-group">
-              <button class="btn btn-primary" type="button" data-action="add">${ico('plus')}添加主机</button>
-              <button class="btn" type="button" data-action="import">导入 ~/.ssh/config</button>
-            </div>
-          </div>
-        </div>`);
-      return;
-    }
+    const steps = guideSteps(store.get(), facts);
+    if (!hosts.length) { render(element, welcome(steps, hosts)); return; }
+    const guideLeft = facts && !preferences.guideDone && steps.some(s => !s.done);
+    if (facts && !preferences.guideDone && !guideLeft) app.setPreferences({ guideDone: true });   // all three done: never again
     const connected = connectedIds();
     shownOnline = connected;
     const groupList = groups(hosts);
@@ -167,6 +158,7 @@ export function createHostsPage(element, app) {
           <button class="btn btn-icon" type="button" data-action="import" aria-label="从 ~/.ssh/config 导入" title="从 ~/.ssh/config 导入">${ico('import', 'sm')}</button>
           <button class="btn btn-primary btn-icon btn-round" type="button" data-action="add" aria-label="添加主机" title="添加主机">${ico('plus')}</button>
         </div>
+        ${guideLeft ? strip(steps, hosts) : ''}
         ${groupList.length > 1 || groupList[0]?.[0] !== '未分组' ? html`
           <div class="host-groups-bar">
             <div class="tabs" role="tablist" aria-label="主机分组" id="host-groups">
@@ -427,6 +419,17 @@ export function createHostsPage(element, app) {
   }
 
   // ---- events -------------------------------------------------------------------------
+  on(element, 'click', '[data-guide]', (event, target) => {
+    event.preventDefault();
+    const what = target.dataset.guide;
+    if (what === 'model') return app.navigate('settings', { section: 'model' });
+    if (what === 'terminal') {
+      const first = orderHosts(store.get().hosts, store.get().preferences.hostOrder)[0];
+      return first && app.navigate('terminal', { hostId: first.id });
+    }
+    if (what === 'help') return openHelp();
+    if (what === 'dismiss') return app.setPreferences({ guideDone: true }).then(draw);
+  });
   on(element, 'click', '[data-action]', (event, target) => {
     const action = target.dataset.action;
     const hostId = target.closest('[data-host]')?.dataset.host;
@@ -524,6 +527,7 @@ export function createHostsPage(element, app) {
     show(params) {
       draw();
       if (params?.add) edit(null);
+      guideFacts().then(next => { facts = next; if (element.isConnected && !element.hidden) draw(); });
     },
   };
 }

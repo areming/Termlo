@@ -2,7 +2,7 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
-import { api, html, ico, render, $, $$, on, toast, fail, menu, contextMenu, message, uid } from './ui.js';
+import { api, html, ico, render, $, $$, on, fail, menu, contextMenu, message, uid } from './ui.js';
 import { SemanticHighlights } from './terminal-highlights.js';
 import { view } from './telemetry.js';
 import { createTerminalAI, trackLine, questionOf } from './terminal-ask.js';
@@ -138,7 +138,6 @@ export function createTerminalPage(element, app) {
       tab.line = '';
       drawTabs(); publish();
       fitTab(tab);
-      hintOnce(tab);
     } catch (error) {
       const text = message(error);
       tab.status = 'failed';
@@ -183,7 +182,12 @@ export function createTerminalPage(element, app) {
         // "# 问题" + Enter: the shell gets it as a comment (does nothing, and the question stays
         // in the scrollback); the assistant takes over this terminal.
         const question = data === '\r' ? questionOf(tab) : null;
-        if (question) { tab.line = ''; ai.begin(tab, question); return; }
+        if (question) {
+          tab.line = '';
+          if (!app.store.get().preferences.askedInTerminal) app.setPreferences({ askedInTerminal: true });
+          ai.begin(tab, question);
+          return;
+        }
         trackLine(tab, data);
         api.write(tab.id, data);
       }
@@ -216,14 +220,6 @@ export function createTerminalPage(element, app) {
     return tab;
   }
 
-  // First terminal ever: one tip about "# 问题".
-  function hintOnce(tab) {
-    try {
-      if (localStorage.getItem('termlo.askHint')) return;
-      localStorage.setItem('termlo.askHint', '1');
-    } catch { return; }
-    toast('小技巧：命令行里输入 # 加一句话回车，助手会在这里查看、动手并回答', { timeout: 9000 });
-  }
 
   async function copySelection(tab) {
     const text = tab.term.getSelection();

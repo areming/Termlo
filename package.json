@@ -1,6 +1,6 @@
 {
   "name": "termlo",
-  "version": "2.5.0",
+  "version": "3.0.0",
   "description": "Local-first SSH, SFTP and server agent desktop client",
   "private": true,
   "main": "src/main.cjs",
@@ -18,7 +18,7 @@
     "productName": "Termlo",
     "electronDist": "node_modules/electron/dist",
     "directories": {
-      "output": "release/2.5.0"
+      "output": "release/3.0.0"
     },
     "files": [
       "src/**/*",

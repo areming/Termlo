@@ -1,25 +1,39 @@
-# Termlo 2.5.0
+# Termlo 3.0.0
 
-Everything since 2.1.3.
+SSH / SFTP 桌面客户端，内置一个守规矩的服务器助手。第一个正式版本。
 
-- **The assistant works inside the terminal.** Type `# what you want` at the prompt and press Enter: the assistant looks around, thinks, acts and verifies right in that terminal. Decisions (risky commands, plans, questions) are keyboard menus (↑↓, Enter, number keys). Ask follow-ups, or press Esc to get your shell back exactly as it was. Select output and right-click "问 AI" to hand it over.
-- **One conversation, no modes.** Questions are answered directly; bigger changes come as a plan first, and "执行方案" runs it to the end with every check reported.
-- **Risky actions wait for you.** Deleting data, stopping or restarting services, rebooting, firewall / SSH / account changes, uninstalling software and piping downloaded scripts to a shell stop with the exact command. Allowing runs exactly that command once. Viewing the firewall is no longer gated.
-- **Several conversations at once** (up to 4). Changes to the same host queue up; after one conversation changes a host, the others look again before acting. Conversations are grouped by host.
-- **Multi-hop jump hosts** (up to 4 levels), with the whole route shown.
-- **Update check**: installed builds look for a new release twice a day and tell you; download it from the release page. Can be turned off in Settings.
-- Enter sends, Shift+Enter adds a line.
-- Fixes: the terminal's last line hid under the status bar; dark edges around the light terminal; jump host menu could not be clicked in the host dialog; menus spilling over the navigation; invisible delete buttons; grey menu text. A short host password is pointed out once (and in the host dialog), not in every conversation.
+*A local-first SSH/SFTP desktop client with a constrained server assistant. First formal release.*
 
-## 中文
+## 能做什么
 
-自 2.1.3 以来的全部改动。
+- **在终端里直接问**：命令行输入 `# 一句话` 回车，助手就在这个终端里查看、思考、动手、验证。需要你决定时用 ↑↓ 选择、↵ 确认；回答后可以接着问，Esc 把 shell 原样还给你。选中一段输出右键"问 AI"交给它看。
+- **助手页**：问题直接回答；改动大的先给方案，点"执行方案"后自己做完，逐项报告验收结果。最多 4 个对话同时进行，按主机归类。
+- **危险操作先问你**：删数据、停止或重启服务、重启机器、改防火墙 / SSH / 账户、卸载软件、下载脚本直接执行，会先给出确切命令，你允许才执行，只放行这一次。
+- **改过的文件能撤销**：助手改文件前必须先读过，改动自动备份；结果由检查项说话，有检查没通过就不会标成"已完成"。
+- **主机**：卡片或列表，分组、拖动排序；在线主机显示实时 CPU、内存、磁盘、网速；密码、私钥、多级跳板机（最多 4 级）；可从 `~/.ssh/config` 导入；首次连接核对服务器指纹。
+- **终端**：多标签、查找、语义高亮、实时状态栏、断线按 Enter 重连。
+- **文件**：拖进来就上传，文件夹上传下载，传输队列，同名冲突处理。
+- **桌面**：关闭后留在托盘、只运行一个实例、Ctrl K 搜索、深浅两套主题、第一次打开有三步上手引导、顶栏 ? 是使用说明、自动检查新版本。
+- **模型**：任何兼容 OpenAI 的接口（OpenRouter、DeepSeek、OpenAI、本机 Ollama…），可设置备用模型，主模型限流时自动接力。
 
-- **助手直接在终端里工作**：命令行输入 `# 一句话` 回车，助手就在这个终端里查看、思考、动手、验证。需要你决定的（危险操作、方案、提问）都是键盘菜单（↑↓、↵、数字键）。可以接着问，Esc 把 shell 原样还给你。选中输出右键"问 AI"交给它看。
-- **一个对话，不分模式**：问题直接回答；改动大的先给方案，点"执行方案"后它自己做完并逐项报告验收结果。
-- **危险操作先问你**：删数据、停止或重启服务、重启机器、改防火墙 / SSH / 账户、卸载软件、下载脚本直接执行，会先停下给出确切命令，允许后只原样执行这一次。只是查看防火墙不再需要确认。
-- **多个对话同时进行**（最多 4 个）：同一台主机上的改动排队；一个对话改过主机后，其他对话动手前会重新查看现场。对话按主机归类。
-- **多级跳板机**（最多 4 级），显示完整路径。
-- **检查更新**：安装版每天检查两次有没有新版本，有就提醒，到发布页下载；设置里可以关掉。
-- Enter 发送，Shift+Enter 换行。
-- 修复：终端最后一行被状态栏遮住；浅色终端四周黑边；主机弹框里跳板机下拉点不动；菜单伸进导航栏；删除按钮看不见；菜单文字发灰。主机密码太短时只提醒一次（以及在主机弹框里当场提示），不再每个对话都提醒。
+## 安全边界
+
+- 助手拥有你所选 SSH 账户的权限，只能操作这次对话选中的主机；它用自己的连接执行命令，不会往你的终端里敲字。
+- 命令输出（以及你交给它的终端内容）会发给你配置的模型服务；密码、私钥和常见令牌在发送前会被隐藏。少于 8 个字符的密码无法可靠隐藏，会提示你。
+- SSH 密码、私钥口令和模型密钥用系统加密保存在本机，不上传。
+
+## 安装
+
+- Windows x64：`Termlo-Setup-3.0.0-x64.exe`。如果提示"已保护你的电脑"，点"更多信息" → "仍要运行"（安装包暂未签名）。
+- macOS（Intel / Apple Silicon）：`.dmg`。如果提示"无法打开"，在访达里右键 Termlo → "打开"。
+- 从旧版本升级：直接安装即可，主机、密码、指纹、模型设置和对话都会保留。1.x 的主机和设置会自动迁移。
+
+## English
+
+- **Ask in the terminal**: type `# what you want` at the prompt and press Enter. The assistant looks around, thinks, acts and verifies right in that terminal; decisions are keyboard menus; Esc hands your shell back untouched.
+- **Assistant page**: questions are answered directly; bigger changes come as a plan first, then run to the end with every check reported. Up to 4 conversations at once, grouped by host.
+- **Risky actions wait for you**: deleting data, stopping services, rebooting, firewall / SSH / account changes, uninstalling and piping downloaded scripts stop with the exact command; allowing runs exactly that once.
+- **Undoable file changes**, evidence-based results, live host metrics, multi-hop jump hosts, `~/.ssh/config` import, SFTP drag and drop, tray, two themes, a three-step first-run guide, in-app help and an update check.
+- Any OpenAI-compatible endpoint, with a fallback model.
+- Secrets stay on your machine (OS encryption); passwords, keys and common tokens are hidden before output reaches the model.
+- Installers are not signed yet: on Windows choose "More info" → "Run anyway"; on macOS right-click → Open.

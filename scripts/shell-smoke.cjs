@@ -65,7 +65,11 @@ async function main() {
     await page.waitForSelector('html[data-ready="true"]');
 
     await step('empty hosts page', async () => {
-      await page.getByRole('heading', { name: '添加第一台服务器' }).waitFor();
+      await page.getByRole('heading', { name: '欢迎使用 Termlo' }).waitFor();
+      await page.locator('[data-guide="help"]').click();
+      await page.getByRole('heading', { name: '使用说明' }).waitFor();
+      await shot('dark-help');
+      await page.getByRole('button', { name: '知道了' }).click();
       await shot('dark-hosts-empty');
     });
 

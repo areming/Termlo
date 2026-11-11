@@ -1,6 +1,7 @@
 // Settings: model, appearance, known hosts, about.
 import { api, html, raw, ico, render, $, on, confirm, toast, fail, message, selectable } from './ui.js';
 import { TERMINAL_FONTS } from './terminal.js';
+import { openHelp } from './guide.js';
 
 const PRESETS = [
   { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
@@ -146,7 +147,7 @@ export function createSettingsPage(element, app) {
               <label class="setting-text" for="s-update"><span>自动检查更新</span><span class="text-xs text-muted">每天看两次 GitHub 上有没有新版本，有就提醒你；不会自动安装</span></label>
               <input class="switch" type="checkbox" role="switch" id="s-update" ${preferences.updateCheck !== false ? raw('checked') : ''}>
             </div>
-            <p class="text-muted text-xs">本地优先：主机、密码和任务记录只保存在这台电脑上。</p>
+            <p class="text-muted text-xs">本地优先：主机、密码和任务记录只保存在这台电脑上。<button class="link-button" type="button" data-action="help">使用说明</button></p>
           </div>
         </section>
       </div>`);
@@ -188,6 +189,7 @@ export function createSettingsPage(element, app) {
     try { await pending; } catch (error) { fail(error); }
     draw();
   });
+  on(element, 'click', '[data-action="help"]', () => openHelp());
   on(element, 'click', '[data-action="open-release"]', () => api.openRelease(store.get().update?.result?.url).catch(fail));
   app.on('update', () => { if (element.isConnected && !element.closest('[hidden]')) draw(); });
   on(element, 'click', '[data-forget]', async (_e, button) => {

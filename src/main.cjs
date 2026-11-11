@@ -71,6 +71,8 @@ function savePreferences(input) {
   if (typeof input.closeToTray === 'boolean') next.closeToTray = input.closeToTray;
   if (typeof input.trayHintShown === 'boolean') next.trayHintShown = input.trayHintShown;
   if (typeof input.updateCheck === 'boolean') next.updateCheck = input.updateCheck;
+  if (typeof input.guideDone === 'boolean') next.guideDone = input.guideDone;
+  if (typeof input.askedInTerminal === 'boolean') next.askedInTerminal = input.askedInTerminal;
   if (typeof input.updateSeen === 'string' && /^[\w.-]{1,40}$/.test(input.updateSeen)) next.updateSeen = input.updateSeen;
   // Card order the user dragged into place: host ids only; unknown ids are harmless and skipped.
   if (Array.isArray(input.hostOrder) && input.hostOrder.length <= 2000 && input.hostOrder.every(id => typeof id === 'string' && /^[\w-]{1,100}$/.test(id))) next.hostOrder = [...new Set(input.hostOrder)];
