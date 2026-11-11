@@ -12,7 +12,9 @@ const root = path.join(__dirname, '..');
 const output = path.join(root, 'test-output', 'shell');
 
 async function main() {
-  require('./build.cjs').build();
+  // --packaged runs the unpacked release build instead of the source tree.
+  const packaged = process.argv.includes('--packaged');
+  if (!packaged) require('./build.cjs').build();
   fs.rmSync(output, { recursive: true, force: true });
   fs.mkdirSync(output, { recursive: true });
   const run = fs.mkdtempSync(path.join(root, 'test-output', 'shell-run-'));
@@ -51,7 +53,11 @@ async function main() {
   try {
     const env = { ...process.env, TERMUS_DATA_DIR: path.join(run, 'data') };
     delete env.ELECTRON_RUN_AS_NODE;
-    app = await electron.launch({ args: [root], env, timeout: 30000 });
+    const pkg = require('../package.json');
+    const executable = { win32: 'win-unpacked/Termlo.exe', darwin: 'mac/Termlo.app/Contents/MacOS/Termlo' }[process.platform];
+    app = await electron.launch(packaged
+      ? { executablePath: path.join(root, pkg.build.directories.output, executable), args: [], env, timeout: 30000 }
+      : { args: [root], env, timeout: 30000 });
     page = await app.firstWindow();
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
