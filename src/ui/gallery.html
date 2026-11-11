@@ -444,7 +444,7 @@
     server_name example.com;
     root /var/www/html;
 }</code></pre>
-            <pre class="terminal" translate="no"><span class="t-prompt">deploy@web-prod-01:~$</span> sudo nginx -t
+            <pre class="output" translate="no"><span class="t-prompt">deploy@web-prod-01:~$</span> sudo nginx -t
 nginx: the configuration file /etc/nginx/nginx.conf syntax is <span class="t-ok">ok</span>
 nginx: configuration file /etc/nginx/nginx.conf test is <span class="t-ok">successful</span>
 <span class="t-prompt">deploy@web-prod-01:~$</span> systemctl is-active nginx
@@ -521,7 +521,7 @@ nginx: configuration file /etc/nginx/nginx.conf test is <span class="t-ok">succe
                     <summary><span class="row-state"><span data-icon="check" data-icon-size="sm"></span></span><span class="console-label">读取 nginx.conf</span><span class="console-meta">0.1 秒</span><span data-icon="chevron-right" data-icon-size="sm" class="chevron"></span></summary>
                     <div class="console-detail">
                       <div class="console-command"><span>$</span><code translate="no">cat /etc/nginx/nginx.conf</code><button class="btn btn-icon btn-sm btn-ghost" type="button" aria-label="复制命令" title="复制命令"><span data-icon="copy" data-icon-size="sm"></span></button></div>
-                      <pre class="terminal" translate="no"><span class="t-muted">41</span>    location / {
+                      <pre class="output" translate="no"><span class="t-muted">41</span>    location / {
 <span class="t-muted">42</span>        try_files $uri $uri/ =404
 <span class="t-muted">43</span>    }</pre>
                     </div>

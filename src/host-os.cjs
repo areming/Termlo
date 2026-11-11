@@ -8,6 +8,21 @@ function parseOS(text){
 }
 function parseInventory(text){const f=fields(text),id=parseOS(text);if(!id)return null;const positive=(value,max)=>{const n=Number(value);return Number.isFinite(n)&&n>0&&n<=max?n:null;};return {id,name:(f.PRETTY_NAME||OS_NAMES[id]).slice(0,100),family:(f.ID_LIKE||'').slice(0,100).toLowerCase(),architecture:(f.TERMUS_ARCH||'').slice(0,40),cpuCount:positive(f.TERMUS_CPUS,1048576),memoryTotal:positive(f.TERMUS_MEMORY,2**60),rootTotal:positive(f.TERMUS_ROOT,2**60),vendor:(f.TERMUS_VENDOR||'').slice(0,100)};}
 const identityKey=host=>JSON.stringify([host.address.toLowerCase(),host.port,host.username,host.jumpHostId||'']);
-async function probeOS(ssh){const {readSample}=require('./host-monitor.cjs');let result;try{result=parseOS(await readSample(ssh,2500,OS_COMMAND));}catch{}if(!result&&!ssh.closed)try{result=parseOS(await readSample(ssh,2000,'cmd /c ver'));}catch{}return result;}
-async function probeInventory(ssh){const {readSample}=require('./host-monitor.cjs');try{const data=parseInventory(await readSample(ssh,5000,OS_COMMAND));if(data)return data;}catch{}const id=await probeOS(ssh);return id?{id,name:OS_NAMES[id]}:null;}
+// Run one short read-only command on an existing connection and collect stdout.
+function readSample(ssh,timeout,command){
+  return new Promise((resolve,reject)=>{
+    let stream,finished=false,text='',exit=null;
+    const done=(error)=>{if(finished)return;finished=true;clearTimeout(timer);ssh.client.off('close',closed);stream?.close();error?reject(error):resolve(parseSafe());};
+    const parseSafe=()=>text;
+    const closed=()=>done(new Error('连接已断开'));ssh.client.once('close',closed);
+    const timer=setTimeout(()=>done(new Error('读取主机信息超时')),timeout);
+    try{ssh.client.exec(command,(error,channel)=>{
+      if(error){done(error);return;}if(finished){channel.close();return;}stream=channel;
+      channel.on('data',chunk=>{text+=chunk.toString();if(text.length>65536)done(new Error('主机信息输出超限'));});
+      channel.stderr.on('data',()=>{});channel.on('exit',code=>{exit=code;});channel.on('error',done);channel.on('close',()=>done(exit===0?null:new Error('主机拒绝读取系统信息')));
+    });}catch(error){done(error);}
+  });
+}
+async function probeOS(ssh){let result;try{result=parseOS(await readSample(ssh,2500,OS_COMMAND));}catch{}if(!result&&!ssh.closed)try{result=parseOS(await readSample(ssh,2000,'cmd /c ver'));}catch{}return result;}
+async function probeInventory(ssh){try{const data=parseInventory(await readSample(ssh,5000,OS_COMMAND));if(data)return data;}catch{}const id=await probeOS(ssh);return id?{id,name:OS_NAMES[id]}:null;}
 module.exports={OS_NAMES,OS_COMMAND,parseOS,parseInventory,probeOS,probeInventory,identityKey};

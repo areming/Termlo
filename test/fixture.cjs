@@ -41,9 +41,6 @@ function startFixture(root, options = {}) {
       session.on('window-change', (acceptWindow, _reject, size) => { terminalSizes.push(size); acceptWindow?.(); });
       session.on('exec', (acceptExec, reject, info) => {
         if(info.command.startsWith('# TERMUS_OS_V1')){const stream=acceptExec();stream.on('error',()=>{});stream.write('Linux\nID=ubuntu\nPRETTY_NAME="Ubuntu 24.04 LTS"\nTERMUS_ARCH=x86_64\nTERMUS_CPUS=4\nTERMUS_MEMORY=8589934592\nTERMUS_ROOT=107374182400\n');stream.exit(0);stream.end();return;}
-        if(info.command.startsWith('# TERMUS_CLOUD_V1')){const stream=acceptExec();stream.on('error',()=>{});stream.write(options.cloud||'VENDOR=QEMU\nVIRT=kvm\n');stream.exit(0);stream.end();return;}
-        if(info.command.startsWith('# TERMUS_METRICS_V1')){const stream=acceptExec();stream.on('error',()=>{});stream.write(require('./metrics-fixture.cjs').metricsFixture(Math.floor(Date.now()/5000)));stream.exit(0);stream.end();return;}
-        if(info.command.startsWith('# TERMUS_HOST_LEDGER_V1')){const stream=acceptExec();stream.on('error',()=>{});stream.write('BOOT=fixture-boot\nKERNEL=Linux 6.1\nOS="Fixture Linux"\nMEM=8192\nROOT=10000 1000 9000\nEND\n');stream.exit(0);stream.end();return;}
         if (!options.exec) return reject();
         const stream = acceptExec(); stream.on('error', () => {});
         options.exec(info.command, stream);

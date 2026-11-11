@@ -8,7 +8,7 @@
     "start": "node scripts/start.cjs",
     "build": "node scripts/build.cjs",
     "test": "node --test test/*.test.cjs",
-    "test:ui": "node scripts/smoke.cjs",
+    "test:ui": "node scripts/shell-smoke.cjs",
     "pack": "npm run build && node scripts/pack.cjs",
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "dist:mac": "npm run build && electron-builder --mac dmg --publish never"
@@ -49,9 +49,9 @@
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-search": "0.16.0",
     "@xterm/xterm": "6.0.0",
-    "ssh2": "1.17.0",
-    "yauzl": "3.4.0"
+    "ssh2": "1.17.0"
   },
   "devDependencies": {
     "electron": "44.9.2",

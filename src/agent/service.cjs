@@ -419,8 +419,9 @@ class AgentService {
           signal: controller.signal,
           onText: text => {
             if (!event) event = this.event(task, 'assistant', '', { streaming: true });
-            event.content += text;
-            this.notify({ type: 'agent-delta', taskId: task.id, eventId: event.id, text: run.redact.text(text) });
+            const safe = run.redact.text(text);
+            event.content += safe;
+            this.notify({ type: 'agent-delta', taskId: task.id, eventId: event.id, text: safe });
           },
         });
         const content = result.message.content;

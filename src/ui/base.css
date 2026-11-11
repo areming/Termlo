@@ -1241,7 +1241,7 @@ code,
   font-size: inherit;
 }
 
-.terminal {
+.output {
   margin: 0;
   padding: var(--sp-3);
   border: var(--border) solid var(--line);
@@ -1960,7 +1960,7 @@ body:has(> .app) {
   white-space: nowrap;
 }
 
-.console-detail .terminal {
+.console-detail .output {
   max-height: calc(var(--sp-8) * 5);
 }
 

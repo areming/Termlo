@@ -33,7 +33,6 @@ class AgentAttachments {
           data=Buffer.alloc(stat.size);let offset=0;
           while(offset<data.length){const {bytesRead}=await handle.read(data,offset,data.length-offset,offset);if(!bytesRead)throw new Error('文件正在变化，请稍后重试');offset+=bytesRead;}
           const after=await handle.stat();if(after.size!==stat.size||after.mtimeMs!==stat.mtimeMs)throw new Error('文件正在变化，请稍后重试');
-          if(project){if(!/\.zip$/i.test(filename))throw new Error('项目附件请使用 ZIP');await require('./project-archive.cjs').inspectArchive(data);}
           const key=randomBytes(32),iv=randomBytes(12);
           try{
             const cipher=createCipheriv('aes-256-gcm',key,iv),encrypted=Buffer.concat([cipher.update(data),cipher.final()]);
