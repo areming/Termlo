@@ -1,17 +1,19 @@
-# Termlo 2.1.2
+# Termlo 2.1.3
 
-- **Drag to reorder hosts** (cards and list); the order is remembered.
-- Fixed: after closing a terminal, a host stayed "online" if the file page had been opened. Live status now follows terminals only.
-- Cards size to their content, so offline cards are compact and rows no longer show empty space.
-- **One search box**: on the hosts page it filters as you type (Enter opens a terminal on the first match); elsewhere it lists hosts and actions below the box. Ctrl K focuses it.
-- Host page header uses icon buttons: import, and a round "add".
-- **No more white title bar**: window buttons sit in the app's top bar and follow the theme; drag the top bar to move the window.
+- **Close to tray** (Windows / Linux): closing the window keeps Termlo and its terminals running. Click the tray icon to reopen; right-click to open a host's terminal or quit. Can be turned off in Settings.
+- **Single instance**: launching Termlo again brings the running window to the front.
+- Live host cards get a **switch-off button** that closes that host's terminals.
+- Fixed: the page jumped sideways and flashed a scrollbar when switching pages.
+- Interface text is no longer selectable by double-click; the terminal, inputs, assistant replies and command output still are.
+- "Termlo" shows in the top bar; the logo takes you back to Hosts.
+- Smaller terminal tab close button that stays inside the tab.
 
 ## 中文
 
-- **主机可以拖动排序**（卡片和列表都可以），顺序会记住。
-- 修复：关掉终端后，如果打开过文件页，主机仍显示在线。现在实时状态只跟终端走。
-- 卡片按内容决定高度：离线卡片更紧凑，不再出现中间空一大块。
-- **一个搜索框**：主机页输入即筛选（回车打开第一台的终端）；其他页面在下方列出主机和操作。Ctrl K 随时聚焦。
-- 主机页右上角改为图标按钮：导入、圆形“添加”。
-- **去掉白色标题栏**：窗口按钮融入应用顶栏，随主题变色；拖动顶栏即可移动窗口。
+- **关闭窗口留在托盘**（Windows / Linux）：终端连接不断；点托盘图标打开，右键可打开某台主机的终端或退出。设置里可以关掉。
+- **只运行一个 Termlo**：再次启动会唤出已打开的窗口。
+- 在线主机卡片新增**关闭终端**按钮，一键关掉这台主机的所有终端。
+- 修复：切换页面时内容向右跳、闪过滚动条。
+- 界面文字不再能被双击选中；终端、输入框、助手回复和命令输出仍可复制。
+- 顶栏显示 Termlo；点左上角图标回到主机页。
+- 终端标签的关闭按钮改小，不再溢出。

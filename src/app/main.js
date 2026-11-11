@@ -33,7 +33,7 @@ app.telemetry = createTelemetry(app);
 function renderShell() {
   render($('#app'), html`
     <nav class="rail" aria-label="主导航">
-      <div class="rail-brand"><img src="./termlo.svg" alt="Termlo" width="28" height="28"></div>
+      <div class="rail-brand"><a href="#hosts" data-page="hosts" title="Termlo · 回到主机"><img src="./termlo.svg" alt="Termlo" width="28" height="28"></a></div>
       <div class="rail-nav">
         ${PAGES.map(p => html`<a class="rail-item" href="#${p.id}" data-page="${p.id}">${ico(p.icon)}${p.label}</a>`)}
       </div>
@@ -42,6 +42,7 @@ function renderShell() {
       </div>
     </nav>
     <header class="topbar">
+      <span class="topbar-brand" translate="no">Termlo</span><span class="topbar-sep" aria-hidden="true">/</span>
       <h1 class="topbar-title" id="page-title">主机</h1>
       <span class="toolbar-spacer"></span>
       <div class="global-search" id="global-search-box">
@@ -274,6 +275,7 @@ async function boot() {
 
   pages.hosts = createHostsPage($('#view-hosts'), app);
   pages.terminal = createTerminalPage($('#view-terminal'), app);
+  app.closeTerminals = hostId => pages.terminal.closeHost(hostId);
   pages.files = createFilesPage($('#view-files'), app);
   pages.assistant = createAssistantPage($('#view-assistant'), app);
   pages.settings = createSettingsPage($('#view-settings'), app);
@@ -281,6 +283,7 @@ async function boot() {
 
   api.onEvent(event => {
     if (event.type === 'hosts') store.set({ hosts: event.hosts });
+    if (event.type === 'navigate') navigate(event.page, event.params);   // from the tray menu
     if (event.type === 'app-prompt') showPrompt(event);
     if (event.type === 'app-prompt-closed') { const element = openPrompts.get(event.id); openPrompts.delete(event.id); element?.close(); }
     for (const handler of listeners.get(event.type) || []) handler(event);

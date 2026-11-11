@@ -8,9 +8,9 @@ import { view } from './telemetry.js';
 
 // Terminal fonts offered in settings. JetBrains Mono ships with the app.
 export const TERMINAL_FONTS = {
-  jetbrains: { label: 'JetBrains Mono（内置）', family: '"JetBrains Mono", "Cascadia Code", Consolas, monospace' },
-  cascadia: { label: 'Cascadia Code', family: '"Cascadia Code", "Cascadia Mono", Consolas, monospace' },
-  system: { label: '系统等宽字体', family: 'Consolas, "SF Mono", Menlo, monospace' },
+  jetbrains: { label: 'JetBrains Mono（内置）', short: 'JetBrains', family: '"JetBrains Mono", "Cascadia Code", Consolas, monospace' },
+  cascadia: { label: 'Cascadia Code', short: 'Cascadia', family: '"Cascadia Code", "Cascadia Mono", Consolas, monospace' },
+  system: { label: '系统等宽字体', short: '系统', family: 'Consolas, "SF Mono", Menlo, monospace' },
 };
 const fontFamily = key => (TERMINAL_FONTS[key] || TERMINAL_FONTS.jetbrains).family;
 const fontsReady = document.fonts.load('14px "JetBrains Mono"').catch(() => {});
@@ -84,7 +84,7 @@ export function createTerminalPage(element, app) {
         <div class="terminal-tab" role="tab" tabindex="${t === active ? 0 : -1}" aria-selected="${t === active}" data-tab="${t.id}" title="${app.hostLabel(t.hostId)}">
           <span class="status" data-state="${{ ready: 'connected', connecting: 'connecting', closed: 'disconnected', failed: 'failed' }[t.status] || 'connecting'}"><span class="dot"></span></span>
           <span class="truncate">${app.hostLabel(t.hostId)}</span>
-          <button class="btn btn-icon btn-sm btn-ghost" type="button" data-close="${t.id}" aria-label="关闭 ${app.hostLabel(t.hostId)}" title="关闭">${ico('close', 'sm')}</button>
+          <button class="tab-close" type="button" data-close="${t.id}" aria-label="关闭 ${app.hostLabel(t.hostId)}" title="关闭">${ico('close', 'sm')}</button>
         </div>`)}
       <button class="btn btn-icon btn-sm btn-ghost terminal-new" type="button" data-new aria-label="新建终端" title="新建终端">${ico('plus', 'sm')}</button>`);
     empty.hidden = tabs.length > 0;
@@ -309,6 +309,10 @@ export function createTerminalPage(element, app) {
 
   drawTabs();
   return {
+    // Close every terminal of a host (the "disconnect" on a live host card).
+    closeHost(hostId) {
+      for (const tab of tabs.filter(t => t.hostId === hostId)) close(tab);
+    },
     show(params) {
       if (params?.hostId) open(params.hostId);
       else if (active) requestAnimationFrame(() => { fitTab(active); active.term.focus(); });

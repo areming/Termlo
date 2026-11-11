@@ -172,7 +172,7 @@
 
 /* ---- shell ----------------------------------------------------------------------------- */
 .view:not([hidden]) { animation: view-in var(--dur-slow) var(--ease-out); }
-@keyframes view-in { from { opacity: 0; transform: translateY(var(--sp-1)); } }
+@keyframes view-in { from { opacity: 0; } }   /* opacity only: a transform here overflows .content and flashes a scrollbar */
 
 .rail { padding-top: var(--sp-4); }
 .rail-brand { margin-bottom: var(--sp-4); filter: drop-shadow(0 0 var(--sp-3) var(--accent-soft)); }
@@ -627,3 +627,48 @@
 /* Round icon button (the page's one primary action, e.g. add host). */
 .btn-round { border-radius: 50%; width: var(--control-md); padding: 0; }
 .btn-round .icon { width: var(--icon-md); height: var(--icon-md); }
+
+/* Terminal tab close: small, inside the tab, quiet until the tab is hovered or selected. */
+.terminal-tab { padding-right: 6px; }
+.tab-close {
+  display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; padding: 0;
+  border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer;
+  opacity: 0; transition: opacity var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.tab-close .icon { width: 12px; height: 12px; }
+.terminal-tab:hover .tab-close, .terminal-tab[aria-selected="true"] .tab-close, .tab-close:focus-visible { opacity: 1; }
+.tab-close:hover { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
+.tab-close:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+
+/* Text is not selectable by default (a desktop tool, not a web page). Selection stays where
+   copying is the point: inputs, the terminal, the assistant's messages and command output. */
+body { -webkit-user-select: none; user-select: none; cursor: default; }
+input, textarea, [contenteditable="true"], .xterm, .msg, .output, pre, code, .decision-body, .md-table, .search-result-hint {
+  -webkit-user-select: text; user-select: text;
+}
+.xterm { cursor: text; }
+
+/* The product name lives in the top bar now that the system title bar is gone. */
+.topbar-brand { font-size: var(--fs-sm); font-weight: var(--fw-strong); letter-spacing: 0.02em; color: var(--text); }
+.topbar-sep { margin: 0 calc(var(--sp-1) * -1); color: var(--line-strong); }
+.topbar-title { color: var(--muted); font-weight: var(--fw-regular); }
+.rail-brand a { display: inline-grid; place-items: center; border-radius: var(--r-sm); transition: transform var(--dur-fast) var(--ease-out); }
+.rail-brand a:hover { transform: scale(1.06); }
+.rail-brand a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+
+/* Live host off switch: top-right of the live block, shows on hover. */
+.host-live, .host-line-live { position: relative; min-width: 0; }
+.host-line-live { display: flex; align-items: center; gap: var(--sp-3); }
+.live-off {
+  position: absolute; top: var(--sp-2); right: var(--sp-2); z-index: var(--z-raised);
+  display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0;
+  border: var(--border) solid var(--line); border-radius: var(--r-sm);
+  background: var(--panel); color: var(--muted); cursor: pointer; opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.host-line-live .live-off { position: static; }
+.host-card:hover .live-off, .host-line:hover .live-off, .live-off:focus-visible { opacity: 1; }
+.live-off:hover { border-color: color-mix(in srgb, var(--danger) 50%, var(--line)); background: var(--danger-soft); color: var(--danger); }
+.live-off:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+/* the card's load figure sits where the switch appears; make room on hover */
+.host-card:hover .tm-chart-head .tm-aside { margin-right: 28px; }

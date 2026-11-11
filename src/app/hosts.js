@@ -53,6 +53,12 @@ export function createHostsPage(element, app) {
       </div>`;
   }
 
+  // Live hosts can be switched off from the card: this closes the host's terminals.
+  function disconnect(host) {
+    const count = (store.get().sessions || []).filter(t => t.kind === 'terminal' && t.hostId === host.id).length;
+    const label = count > 1 ? `关闭 ${count} 个终端` : '关闭终端';
+    return html`<button class="live-off" type="button" data-action="disconnect" aria-label="${label}（${host.name}）" title="${label}">${ico('power', 'sm')}</button>`;
+  }
   const targetOf = host => `${host.username}@${host.address}${host.port !== 22 ? ':' + host.port : ''}`;
   function via(host) {
     if (!host.jumpHostId) return '';
@@ -80,7 +86,7 @@ export function createHostsPage(element, app) {
           ${OS_LABEL(host) ? html`<span class="host-os truncate" title="${OS_LABEL(host)}">${OS_LABEL(host).replace(/ LTS$/, '')}</span>` : ''}
         </header>
         ${online
-          ? html`<div class="host-telemetry" data-telemetry="${host.id}" data-variant="card">${view('card', telemetry.get(host.id), telemetry.history(host.id))}</div>`
+          ? html`<div class="host-live"><div class="host-telemetry" data-telemetry="${host.id}" data-variant="card">${view('card', telemetry.get(host.id), telemetry.history(host.id))}</div>${disconnect(host)}</div>`
           : facts.length ? html`<div class="host-idle" title="打开终端后显示实时状态"><span class="host-facts">${facts.map(f => html`<span>${f}</span>`)}</span></div>` : ''}
         <footer class="host-card-foot">
           ${actions(host)}
@@ -98,7 +104,7 @@ export function createHostsPage(element, app) {
           <span class="host-line-target"><span class="mono truncate" translate="no">${targetOf(host)}</span>${via(host)}</span>
         </div>
         ${online
-          ? html`<div class="host-line-signal" data-telemetry="${host.id}" data-variant="line">${view('line', app.telemetry.get(host.id), app.telemetry.history(host.id))}</div>`
+          ? html`<div class="host-line-live"><div class="host-line-signal" data-telemetry="${host.id}" data-variant="line">${view('line', app.telemetry.get(host.id), app.telemetry.history(host.id))}</div>${disconnect(host)}</div>`
           : html`<div class="host-line-signal host-line-facts">${facts.map(f => html`<span>${f}</span>`)}</div>`}
         <div class="host-line-actions">${actions(host)}</div>
       </li>`;
@@ -406,6 +412,7 @@ export function createHostsPage(element, app) {
     if (action === 'terminal') return app.navigate('terminal', { hostId });
     if (action === 'files') return app.navigate('files', { hostId });
     if (action === 'assistant') return app.navigate('assistant', { hostIds: [hostId] });
+    if (action === 'disconnect') return app.closeTerminals(hostId);
     if (action === 'edit') return edit(host);
     if (action === 'copy') return copyAddress(host);
     if (action === 'delete') return remove(host);

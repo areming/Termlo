@@ -1,5 +1,5 @@
 // Termlo 2.0 main process: hosts, terminals, files, assistant, settings.
-const { app, BrowserWindow, ipcMain, dialog, safeStorage, clipboard, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, safeStorage, clipboard, Menu, shell, Tray, nativeImage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -67,6 +67,8 @@ function savePreferences(input) {
   if (['grid', 'list'].includes(input.hostView)) next.hostView = input.hostView;
   if (['jetbrains', 'cascadia', 'system'].includes(input.terminalFont)) next.terminalFont = input.terminalFont;
   if (typeof input.terminalHighlights === 'boolean') next.terminalHighlights = input.terminalHighlights;
+  if (typeof input.closeToTray === 'boolean') next.closeToTray = input.closeToTray;
+  if (typeof input.trayHintShown === 'boolean') next.trayHintShown = input.trayHintShown;
   // Card order the user dragged into place: host ids only; unknown ids are harmless and skipped.
   if (Array.isArray(input.hostOrder) && input.hostOrder.length <= 2000 && input.hostOrder.every(id => typeof id === 'string' && /^[\w-]{1,100}$/.test(id))) next.hostOrder = [...new Set(input.hostOrder)];
   const file = path.join(dataPath, 'preferences.json');
@@ -362,7 +364,47 @@ function createWindow() {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.once('ready-to-show', () => window.show());
+  // Closing the window keeps Termlo (and its terminals) running in the tray, like most desktop
+  // tools; the tray menu quits. The first time, say where it went.
+  window.on('close', event => {
+    if (quitting || !tray || preferences.closeToTray === false) return;
+    event.preventDefault();
+    window.hide();
+    if (!preferences.trayHintShown) {
+      tray.displayBalloon?.({ title: 'Termlo 还在运行', content: '终端连接保持不断。点托盘图标打开，右键可以退出。', iconType: 'info' });
+      savePreferences({ trayHintShown: true });
+    }
+  });
   window.loadURL(indexUrl);
+}
+
+// ---- tray (Windows / Linux) -------------------------------------------------------------
+let tray = null, quitting = false;
+function showWindow() {
+  if (!window || window.isDestroyed()) return createWindow();
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+}
+function trayMenu() {
+  const hosts = store.list().slice().sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')).slice(0, 15);
+  const terminals = [...connections.values()].filter(ssh => ssh.kind === 'terminal' && !ssh.closed).length;
+  return Menu.buildFromTemplate([
+    { label: '打开 Termlo', click: showWindow },
+    { label: '打开终端', enabled: hosts.length > 0, submenu: hosts.map(h => ({ label: h.name, click: () => { showWindow(); send({ type: 'navigate', page: 'terminal', params: { hostId: h.id } }); } })) },
+    { type: 'separator' },
+    { label: terminals ? `退出（关闭 ${terminals} 个终端）` : '退出 Termlo', click: () => { quitting = true; app.quit(); } },
+  ]);
+}
+function createTray() {
+  if (process.platform === 'darwin' || tray) return;
+  const icon = nativeImage.createFromPath(path.join(root, 'assets', process.platform === 'win32' ? 'termlo.ico' : 'termlo.png'));
+  tray = new Tray(process.platform === 'win32' || icon.isEmpty() ? icon : icon.resize({ width: 22, height: 22 }));   // .ico carries its own sizes
+  tray.setToolTip('Termlo');
+  tray.on('click', showWindow);
+  // Built on demand so the host list and terminal count are current.
+  if (process.platform === 'win32') tray.on('right-click', () => tray.popUpContextMenu(trayMenu()));
+  else tray.setContextMenu(trayMenu());
 }
 
 app.whenReady().then(() => {
@@ -381,9 +423,16 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   installHandlers();
   createWindow();
+  createTray();
 });
 
+// One Termlo per data directory: launching it again brings the running window back.
+if (!app.requestSingleInstanceLock()) app.exit(0);
+app.on('second-instance', () => { if (app.isReady()) showWindow(); });
+
 app.on('before-quit', () => {
+  quitting = true;
+  tray?.destroy();
   monitor.close();
   agent?.close();
   for (const ssh of connections.values()) ssh.close();

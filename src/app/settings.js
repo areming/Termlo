@@ -27,7 +27,7 @@ export function createSettingsPage(element, app) {
     render(element, html`
       <div class="page settings-page">
         <section class="settings-section" id="settings-model" aria-labelledby="s-model">
-          <header><h2 class="title-lg" id="s-model">模型</h2><p class="text-muted">助手使用 OpenAI 兼容的 Chat Completions 接口，模型需要支持工具调用。</p></header>
+          <header><h2 class="title-lg" id="s-model">模型</h2><p class="text-muted">OpenAI 兼容接口，模型需支持工具调用</p></header>
           <form class="card settings-card" data-form="model" autocomplete="off">
             <div class="field">
               <label class="field-label" for="m-base">接口地址</label>
@@ -45,14 +45,13 @@ export function createSettingsPage(element, app) {
               </div>
             </div>
             <div class="field">
-              <label class="field-label" for="m-fallback">备用模型<span class="optional">可选</span></label>
-              <input class="input mono" id="m-fallback" name="fallbackModel" value="${settings.fallbackModel || ''}" placeholder="例如更便宜的收费模型…" spellcheck="false">
-              <p class="field-help">主模型限流或额度用完时，本次任务自动改用它（同一接口和密钥）。适合主模型用免费额度的情况。</p>
+              <label class="field-label" for="m-fallback" title="主模型限流或额度用完时，本次任务自动改用它（同一接口和密钥）">备用模型<span class="optional">可选</span></label>
+              <input class="input mono" id="m-fallback" name="fallbackModel" value="${settings.fallbackModel || ''}" placeholder="主模型限流或额度用完时改用它…" spellcheck="false">
             </div>
             <div class="field">
-              <label class="field-label" for="m-key">API 密钥<span class="optional">${settings.keyBroken ? '' : settings.hasKey ? '已保存，留空则不变' : '本机接口可以不填'}</span></label>
+              <label class="field-label" for="m-key" title="用系统加密保存在本机；更换接口地址后需要重新填写">API 密钥<span class="optional">${settings.keyBroken ? '' : settings.hasKey ? '已保存，留空则不变' : '本机接口可以不填'}</span></label>
               <input class="input mono" id="m-key" name="apiKey" type="password" placeholder="${settings.hasKey ? '••••••••' : 'sk-…'}" autocomplete="off">
-              ${settings.keyBroken ? html`<p class="field-error">${ico('status-warning', 'sm')}已保存的密钥无法在这台电脑上解密，请重新填写。</p>` : html`<p class="field-help">用系统加密保存在本机。更换接口地址后需要重新填写。</p>`}
+              ${settings.keyBroken ? html`<p class="field-error">${ico('status-warning', 'sm')}已保存的密钥无法在这台电脑上解密，请重新填写。</p>` : ''}
             </div>
             <div class="btn-group settings-actions">
               <button class="btn" type="button" data-action="test" ${testing || !settings.model ? raw('disabled') : ''} ${testing ? raw('aria-busy="true"') : ''}>${testing ? '测试中…' : '测试连接'}</button>
@@ -80,20 +79,25 @@ export function createSettingsPage(element, app) {
               </div>
             </div>
             <div class="setting">
-              <label class="setting-text" for="s-font"><span>终端字体</span></label>
-              <span class="select-wrap"><select class="select" id="s-font">
-                ${Object.entries(TERMINAL_FONTS).map(([key, font]) => html`<option value="${key}" ${(preferences.terminalFont || 'jetbrains') === key ? raw('selected') : ''}>${font.label}</option>`)}
-              </select></span>
+              <span class="setting-text" id="s-font-label"><span>终端字体</span></span>
+              <div class="segmented segmented-sm" role="radiogroup" aria-labelledby="s-font-label" id="s-font">
+                ${Object.entries(TERMINAL_FONTS).map(([key, font]) => html`<button type="button" role="radio" data-font-choice="${key}" aria-checked="${(preferences.terminalFont || 'jetbrains') === key}" title="${font.label}" style="font-family: ${font.family}">${font.short}</button>`)}
+              </div>
             </div>
             <div class="setting">
               <label class="setting-text" for="s-highlights"><span>终端高亮</span><span class="text-xs text-muted">给命令、地址、路径、错误和警告上色</span></label>
               <input class="switch" type="checkbox" role="switch" id="s-highlights" ${preferences.terminalHighlights !== false ? raw('checked') : ''}>
             </div>
+            ${document.documentElement.dataset.platform !== 'darwin' ? html`
+              <div class="setting">
+                <label class="setting-text" for="s-tray"><span>关闭窗口时留在托盘</span><span class="text-xs text-muted">终端连接保持不断，右键托盘图标退出</span></label>
+                <input class="switch" type="checkbox" role="switch" id="s-tray" ${preferences.closeToTray !== false ? raw('checked') : ''}>
+              </div>` : ''}
           </div>
         </section>
 
         <section class="settings-section" aria-labelledby="s-known">
-          <header><h2 class="title-lg" id="s-known">已知主机</h2><p class="text-muted">第一次连接时确认过的服务器指纹。服务器重装或更换密钥后，删除旧记录再重新连接。</p></header>
+          <header><h2 class="title-lg" id="s-known">已知主机</h2><p class="text-muted">服务器重装或换了密钥，删掉旧记录再连接即可</p></header>
           ${known.length ? html`
             <ul class="list">${known.map(k => html`
               <li class="row">
@@ -131,6 +135,7 @@ export function createSettingsPage(element, app) {
         </section>
       </div>`);
     selectable($('#s-theme', element), '[role="radio"]', 'aria-checked', button => app.setPreferences({ theme: button.dataset.themeChoice }));
+    selectable($('#s-font', element), '[role="radio"]', 'aria-checked', button => app.setPreferences({ terminalFont: button.dataset.fontChoice }));
   }
 
   element.addEventListener('submit', async event => {
@@ -157,7 +162,7 @@ export function createSettingsPage(element, app) {
     if (size >= 11 && size <= 22) app.setPreferences({ terminalFontSize: size }).then(draw);
   });
   element.addEventListener('change', event => {
-    if (event.target.id === 's-font') app.setPreferences({ terminalFont: event.target.value });
+    if (event.target.id === 's-tray') app.setPreferences({ closeToTray: event.target.checked });
     if (event.target.id === 's-highlights') app.setPreferences({ terminalHighlights: event.target.checked });
   });
   on(element, 'click', '[data-forget]', async (_e, button) => {
