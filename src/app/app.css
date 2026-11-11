@@ -559,3 +559,71 @@
 .compose-recent { display: grid; gap: var(--sp-2); }
 .compose-recent .section-title { margin: 0 var(--sp-1); color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-strong); }
 .compose-recent .list { margin-top: 0; }
+
+/* Cards size to what they show: an offline card is compact, a live one grows. */
+.host-grid { align-items: start; }
+.host-idle { flex: none; min-height: 0; }
+.host-card:not([data-online="true"]) { gap: var(--sp-2); }
+.host-card:not([data-online="true"]) .host-card-foot { margin-top: var(--sp-1); }
+
+/* Drag to reorder: the lifted item fades, a bar shows where it lands. */
+.host-card[draggable="true"], .host-line[draggable="true"] { cursor: grab; }
+.host-card[draggable="true"]:active, .host-line[draggable="true"]:active { cursor: grabbing; }
+.is-dragging { opacity: 0.4; }
+.host-card[data-drop]::before, .host-line[data-drop]::before {
+  content: ""; position: absolute; z-index: var(--z-raised); border-radius: 2px; background: var(--accent);
+  box-shadow: 0 0 8px var(--accent); pointer-events: none;
+}
+.host-card[data-drop]::before { top: var(--sp-2); bottom: var(--sp-2); width: 3px; }
+.host-card[data-drop="before"]::before { left: calc(var(--sp-2) * -1 + -1px); }
+.host-card[data-drop="after"]::before { right: calc(var(--sp-2) * -1 + -1px); }
+.host-line[data-drop]::before { left: var(--sp-3); right: var(--sp-3); height: 2px; }
+.host-line[data-drop="before"]::before { top: -2px; }
+.host-line[data-drop="after"]::before { bottom: -2px; }
+::view-transition-group(*) { animation-duration: var(--dur-slow); animation-timing-function: var(--ease-out); }
+
+/* ---- the top bar is the window's title bar ----------------------------------------------- */
+.topbar, .rail-brand { -webkit-app-region: drag; user-select: none; }
+.topbar button, .topbar input, .topbar a, .topbar .global-search, .rail-brand a { -webkit-app-region: no-drag; }
+/* Leave room for the system's window buttons (Windows / Linux draw them over the right end). */
+.topbar { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + var(--sp-3)); }
+:root[data-platform="darwin"] .rail { padding-top: 44px; }
+
+/* ---- one search box for the whole app -------------------------------------------------- */
+.global-search {
+  display: flex; flex: 0 1 360px; align-items: center; gap: var(--sp-2); min-width: 0;
+  height: var(--control-md); padding: 0 var(--sp-1) 0 var(--sp-3);
+  border: var(--border) solid var(--line); border-radius: var(--r-sm); background: var(--surface-inset);
+  color: var(--muted);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), flex-basis var(--dur-base) var(--ease-out);
+}
+.global-search:hover { border-color: var(--line-strong); }
+.global-search:focus-within { flex-basis: 440px; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.global-search input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; font-size: var(--fs-sm); }
+.global-search input::placeholder { color: var(--muted); opacity: 1; }
+.global-search:focus-within .kbd { opacity: 0; }
+.global-search:focus-within > .icon { color: var(--accent-text); }
+
+.search-results[popover] {
+  inset: auto; margin: 0; height: auto; max-height: 60vh; overflow: auto;
+  padding: var(--sp-1); list-style: none;
+  border: var(--border) solid var(--line); border-radius: var(--r-md);
+  background: var(--panel); color: var(--text);
+  box-shadow: var(--shadow-popover), var(--edge-highlight);
+  animation: pop-in var(--dur-fast) var(--ease-out);
+}
+.search-result {
+  display: flex; align-items: center; gap: var(--sp-3); height: 34px; padding: 0 var(--sp-3);
+  border-radius: var(--r-sm); cursor: pointer; font-size: var(--fs-sm);
+}
+.search-result .icon { color: var(--muted); }
+.search-result[aria-selected="true"], .search-result:hover { background: var(--hover); }
+.search-result[aria-selected="true"] .icon { color: var(--accent-text); }
+.search-result-label { min-width: 0; }
+.search-result-verb { flex: none; padding: 0 6px; border-radius: var(--r-sm); background: var(--surface-raised); color: var(--muted); font-size: var(--fs-xs); line-height: 20px; }
+.search-result-hint { flex: 1; min-width: 0; color: var(--muted); font-size: var(--fs-xs); text-align: right; }
+.search-empty { padding: var(--sp-3); color: var(--muted); font-size: var(--fs-sm); }
+
+/* Round icon button (the page's one primary action, e.g. add host). */
+.btn-round { border-radius: 50%; width: var(--control-md); padding: 0; }
+.btn-round .icon { width: var(--icon-md); height: var(--icon-md); }

@@ -52,7 +52,10 @@ function session(id) {
 }
 
 // ---- preferences (theme, terminal) ------------------------------------------
-const PREFERENCE_DEFAULTS = { theme: 'dark', terminalFontSize: 14, terminalFont: 'jetbrains', terminalHighlights: true, hostView: 'grid' };
+// Window-button strip (Windows / Linux): the top bar's --bg and --muted tokens, one per theme.
+const TITLE_BAR = { dark: { color: '#0f131a', symbolColor: '#929eb0' }, light: { color: '#eef2f6', symbolColor: '#566779' } };
+const titleBarOverlay = theme => ({ ...TITLE_BAR[theme === 'light' ? 'light' : 'dark'], height: 47 });
+const PREFERENCE_DEFAULTS ={ theme: 'dark', terminalFontSize: 14, terminalFont: 'jetbrains', terminalHighlights: true, hostView: 'grid' };
 function loadPreferences() {
   try { return { ...PREFERENCE_DEFAULTS, ...JSON.parse(fs.readFileSync(path.join(dataPath, 'preferences.json'), 'utf8')) }; }
   catch { return { ...PREFERENCE_DEFAULTS }; }
@@ -64,6 +67,8 @@ function savePreferences(input) {
   if (['grid', 'list'].includes(input.hostView)) next.hostView = input.hostView;
   if (['jetbrains', 'cascadia', 'system'].includes(input.terminalFont)) next.terminalFont = input.terminalFont;
   if (typeof input.terminalHighlights === 'boolean') next.terminalHighlights = input.terminalHighlights;
+  // Card order the user dragged into place: host ids only; unknown ids are harmless and skipped.
+  if (Array.isArray(input.hostOrder) && input.hostOrder.length <= 2000 && input.hostOrder.every(id => typeof id === 'string' && /^[\w-]{1,100}$/.test(id))) next.hostOrder = [...new Set(input.hostOrder)];
   const file = path.join(dataPath, 'preferences.json');
   const temporary = `${file}.${randomUUID()}.tmp`;
   fs.writeFileSync(temporary, JSON.stringify(next, null, 2), { mode: 0o600 });
@@ -99,10 +104,11 @@ function credentialsFor(route, supplied = {}) {
 
 // Learn the OS of a host once connected (shown on host cards, given to the assistant).
 const probed = new Map();
-// Live metrics ride on connections the user opened (terminal / files); the assistant's have no kind.
+// Live metrics ride on the terminals the user opened: a terminal open means "online". File
+// sessions linger in the background and the assistant's have no kind, so neither is sampled.
 const monitor = new HostMonitor({ notify: message => send(message) });
 SSHSession.observe = (hostId, ssh) => {
-  if (ssh.kind) monitor.attach(hostId, ssh);
+  if (ssh.kind === 'terminal') monitor.attach(hostId, ssh);
   let key;
   try { key = identityKey(store.get(hostId)); } catch { return; }
   if (Date.now() - (probed.get(hostId + key) || 0) < 60000) return;
@@ -185,7 +191,11 @@ function installHandlers() {
     version: app.getVersion(),
     metrics: monitor.snapshot(),
   }));
-  handle('savePreferences', input => savePreferences(input || {}));
+  handle('savePreferences', input => {
+    const saved = savePreferences(input || {});
+    if (process.platform !== 'darwin') window?.setTitleBarOverlay?.(titleBarOverlay(saved.theme));
+    return saved;
+  });
   handle('answerPrompt', (id, response) => prompts.answer(id, response));
 
   // hosts
@@ -341,7 +351,11 @@ function createWindow() {
   window = new BrowserWindow({
     width: 1360, height: 860, minWidth: 1000, minHeight: 680,
     show: false, autoHideMenuBar: true, title: 'Termlo',
-    backgroundColor: preferences.theme === 'light' ? '#f4f6f8' : '#14171c',
+    backgroundColor: TITLE_BAR[preferences.theme === 'light' ? 'light' : 'dark'].color,
+    // The app draws its own top bar; the system keeps only the window buttons, in our colors.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 17 } }
+      : { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay(preferences.theme) }),
     icon: path.join(root, 'assets', process.platform === 'win32' ? 'termlo.ico' : 'termlo.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
   });

@@ -1,13 +1,13 @@
 // Hosts: grouped cards or list, quick actions, add/edit, ~/.ssh/config import.
 import { api, html, raw, ico, render, $, $$, on, dialog, confirm, toast, fail, menu, contextMenu, selectable, bytes } from './ui.js';
 import { view } from './telemetry.js';
+import { orderHosts, moveHost } from './host-order.mjs';
 
 const OS_LABEL = host => host.operatingSystem?.name || '';
 
 export function createHostsPage(element, app) {
   const { store } = app;
   let group = '全部';
-  let query = '';
   let shownOnline = new Set();   // hosts drawn as online in the last render
 
   function connectedIds() {
@@ -21,11 +21,10 @@ export function createHostsPage(element, app) {
   }
 
   function visible(hosts) {
-    const q = query.trim().toLowerCase();
-    return hosts
+    const q = (store.get().hostQuery || '').trim().toLowerCase();   // typed in the top search box
+    return orderHosts(hosts, store.get().preferences.hostOrder)
       .filter(h => group === '全部' || (h.group || '未分组') === group)
-      .filter(h => !q || [h.name, h.address, h.username, h.group, h.tags].join(' ').toLowerCase().includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+      .filter(h => !q || [h.name, h.address, h.username, h.group, h.tags].join(' ').toLowerCase().includes(q));
   }
 
   // Hardware facts learned on a previous connection, shown while a host is offline.
@@ -71,20 +70,18 @@ export function createHostsPage(element, app) {
     const facts = specs(host);
     const telemetry = app.telemetry;
     return html`
-      <article class="host-card" data-host="${host.id}" data-online="${online}">
+      <article class="host-card" data-host="${host.id}" data-online="${online}" draggable="true" style="view-transition-name: host-${host.id}">
         <header class="host-card-head">
           <span class="host-pulse" aria-hidden="true"></span>
           <div class="host-card-main">
-            <h3 class="host-card-title truncate"><a class="card-link" href="#terminal" data-action="terminal" title="打开终端">${host.name}</a></h3>
+            <h3 class="host-card-title truncate"><a class="card-link" href="#terminal" data-action="terminal" title="打开终端" draggable="false">${host.name}</a></h3>
             <p class="host-card-target"><span class="mono truncate" translate="no">${target}</span>${via(host)}</p>
           </div>
           ${OS_LABEL(host) ? html`<span class="host-os truncate" title="${OS_LABEL(host)}">${OS_LABEL(host).replace(/ LTS$/, '')}</span>` : ''}
         </header>
         ${online
           ? html`<div class="host-telemetry" data-telemetry="${host.id}" data-variant="card">${view('card', telemetry.get(host.id), telemetry.history(host.id))}</div>`
-          : html`<div class="host-idle" title="打开终端或文件后显示实时状态">
-              ${facts.length ? html`<span class="host-facts">${facts.map(f => html`<span>${f}</span>`)}</span>` : ''}
-            </div>`}
+          : facts.length ? html`<div class="host-idle" title="打开终端后显示实时状态"><span class="host-facts">${facts.map(f => html`<span>${f}</span>`)}</span></div>` : ''}
         <footer class="host-card-foot">
           ${actions(host)}
         </footer>
@@ -94,10 +91,10 @@ export function createHostsPage(element, app) {
   function row(host, online) {
     const facts = specs(host);
     return html`
-      <li class="host-line" data-host="${host.id}" data-online="${online}">
+      <li class="host-line" data-host="${host.id}" data-online="${online}" draggable="true" style="view-transition-name: host-${host.id}">
         ${glyph(host)}
         <div class="host-line-main">
-          <a class="host-line-name card-link truncate" href="#terminal" data-action="terminal" title="${OS_LABEL(host) || '打开终端'}">${host.name}</a>
+          <a class="host-line-name card-link truncate" href="#terminal" data-action="terminal" draggable="false" title="${OS_LABEL(host) || '打开终端'}">${host.name}</a>
           <span class="host-line-target"><span class="mono truncate" translate="no">${targetOf(host)}</span>${via(host)}</span>
         </div>
         ${online
@@ -141,18 +138,16 @@ export function createHostsPage(element, app) {
     const groupList = groups(hosts);
     if (group !== '全部' && !groupList.some(([name]) => name === group)) group = '全部';
     const list = visible(hosts);
-    const focused = document.activeElement?.id === 'host-filter';
     render(element, html`
       <div class="page">
         <div class="page-header">
           <h2 class="page-title">主机<span class="count">${hosts.length} 台</span>${connected.size ? html`<span class="online-count"><span class="dot"></span>${connected.size} 台在线</span>` : ''}</h2>
-          <div class="input-group host-filter">${ico('search', 'sm')}<input class="input" id="host-filter" type="search" value="${query}" placeholder="筛选主机…" aria-label="筛选主机" autocomplete="off"></div>
           <div class="segmented" role="radiogroup" aria-label="显示方式" id="host-view">
             <button type="button" role="radio" data-view="grid" aria-checked="${view === 'grid'}" aria-label="卡片" title="卡片">${ico('view-grid', 'sm')}</button>
             <button type="button" role="radio" data-view="list" aria-checked="${view === 'list'}" aria-label="列表" title="列表">${ico('view-list', 'sm')}</button>
           </div>
-          <button class="btn" type="button" data-action="import">导入</button>
-          <button class="btn btn-primary" type="button" data-action="add">${ico('plus')}添加主机</button>
+          <button class="btn btn-icon" type="button" data-action="import" aria-label="从 ~/.ssh/config 导入" title="从 ~/.ssh/config 导入">${ico('import', 'sm')}</button>
+          <button class="btn btn-primary btn-icon btn-round" type="button" data-action="add" aria-label="添加主机" title="添加主机">${ico('plus')}</button>
         </div>
         ${groupList.length > 1 || groupList[0]?.[0] !== '未分组' ? html`
           <div class="host-groups-bar">
@@ -162,14 +157,13 @@ export function createHostsPage(element, app) {
             </div>
             ${group !== '全部' && group !== '未分组' ? html`<button class="btn btn-sm btn-ghost" type="button" data-action="group-menu" title="重命名或解散分组“${group}”">${ico('more', 'sm')}管理分组</button>` : ''}
           </div>` : ''}
-        ${!list.length ? html`<p class="text-muted empty-inline">没有匹配的主机。</p>`
+        ${!list.length ? html`<p class="text-muted empty-inline">没有匹配“${store.get().hostQuery || ''}”的主机</p>`
           : view === 'list' ? html`<div class="host-list">${listView(list, connected)}</div>`
           : html`<div class="host-grid">${list.map(h => card(h, connected.has(h.id)))}</div>`}
       </div>`);
     const tabs = $('#host-groups', element);
     if (tabs) selectable(tabs, '[role="tab"]', 'aria-selected', tab => { group = tab.dataset.group; draw(); $(`[data-group="${CSS.escape(group)}"]`, element)?.focus(); });
     selectable($('#host-view', element), '[role="radio"]', 'aria-checked', button => app.setPreferences({ hostView: button.dataset.view }));
-    if (focused) { const input = $('#host-filter', element); input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
   }
 
   // ---- add / edit ---------------------------------------------------------------------
@@ -422,6 +416,52 @@ export function createHostsPage(element, app) {
     const next = await askGroup({ title: `把 ${host.name} 移到分组`, value: host.group === '未分组' ? '' : host.group, action: '移动', help: '输入新名称会新建分组；留空则移到“未分组”。', allowEmpty: true });
     if (next !== null) await moveHosts([host.id], next, `已移到“${next || '未分组'}”`);
   }
+  // ---- drag to reorder ------------------------------------------------------------------
+  const DRAG_TYPE = 'application/x-termlo-host';
+  let dragged = null;
+  const clearMarks = () => { for (const el of $$('[data-drop]', element)) delete el.dataset.drop; };
+  // Grid: left or right half of a card; list: top or bottom half of a line.
+  const isAfter = (target, event) => {
+    const box = target.getBoundingClientRect();
+    return target.classList.contains('host-line') ? event.clientY > box.top + box.height / 2 : event.clientX > box.left + box.width / 2;
+  };
+  element.addEventListener('dragstart', event => {
+    const item = event.target.closest?.('[data-host][draggable="true"]');
+    if (!item) return;
+    dragged = item.dataset.host;
+    event.dataTransfer.setData(DRAG_TYPE, dragged);
+    event.dataTransfer.effectAllowed = 'move';
+    requestAnimationFrame(() => item.classList.add('is-dragging'));
+  });
+  element.addEventListener('dragover', event => {
+    if (!dragged || !event.dataTransfer.types.includes(DRAG_TYPE)) return;
+    const target = event.target.closest('[data-host][draggable="true"]');
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    if (!target || target.dataset.host === dragged) return clearMarks();
+    const mark = isAfter(target, event) ? 'after' : 'before';
+    if (target.dataset.drop === mark) return;
+    clearMarks();
+    target.dataset.drop = mark;
+  });
+  element.addEventListener('drop', event => {
+    const target = event.target.closest('[data-host][draggable="true"]');
+    if (!dragged || !target || target.dataset.host === dragged) return;
+    event.preventDefault();
+    const { hosts, preferences } = store.get();
+    const hostOrder = moveHost(hosts, preferences.hostOrder, dragged, target.dataset.host, isAfter(target, event));
+    clearMarks();
+    const apply = () => store.set({ preferences: { ...preferences, hostOrder } });
+    const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (document.startViewTransition && !calm) document.startViewTransition(apply); else apply();
+    api.savePreferences({ hostOrder }).catch(fail);
+  });
+  element.addEventListener('dragend', () => {
+    dragged = null;
+    clearMarks();
+    for (const el of $$('.is-dragging', element)) el.classList.remove('is-dragging');
+  });
+
   element.addEventListener('contextmenu', event => {
     const hostId = event.target.closest('[data-host]')?.dataset.host;
     const host = store.get().hosts.find(h => h.id === hostId);
@@ -437,9 +477,6 @@ export function createHostsPage(element, app) {
       'separator',
       { label: '删除主机…', icon: 'trash', danger: true, run: () => remove(host) },
     ], event.target.closest('[data-host]').querySelector('.card-link'));
-  });
-  element.addEventListener('input', event => {
-    if (event.target.id === 'host-filter') { query = event.target.value; draw(); }
   });
   store.subscribe(() => { if (!element.hidden) draw(); });
   // A host going online or offline changes the card's shape; a new sample only patches numbers.

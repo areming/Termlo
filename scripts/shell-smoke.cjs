@@ -181,7 +181,8 @@ async function main() {
 
     await step('command palette', async () => {
       await page.keyboard.press('Control+k');
-      await page.getByLabel('搜索主机或操作').fill('fixture');
+      await page.locator('#global-search').fill('fixture');
+      await page.locator('.search-result').first().waitFor();
       await shot('dark-palette');
       await page.keyboard.press('Escape');
     });
@@ -189,6 +190,10 @@ async function main() {
     await step('host list view and groups', async () => {
       await page.locator('.rail-item[data-page="hosts"]').click();
       await page.getByRole('radio', { name: '列表' }).click();
+      await page.locator('#global-search').fill('no-such-host');
+      await page.getByText('没有匹配“no-such-host”的主机').waitFor();
+      await page.keyboard.press('Escape');
+      await page.locator('#global-search').blur();
       const row = page.locator('.host-line').first();
       await row.waitFor();
       // Row buttons and the page around the list must not open the terminal.

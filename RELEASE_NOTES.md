@@ -1,17 +1,17 @@
-# Termlo 2.1.1
+# Termlo 2.1.2
 
-- **Fewer words**: host card actions are icons only (hover for a label); redundant hint lines removed.
-- **Jump hosts** show as a small route tag (icon + jump host name) on cards and in the list.
-- **Add / edit host**: pick a group from one-click chips or type a new one; the jump host is a dropdown that shows names and addresses.
-- **List view redesigned**: sectioned by group; online hosts show CPU trend and memory / disk rings, offline hosts show their specs; actions appear on hover.
-- **Assistant home** is centered with four one-click starter tasks; empty pages redesigned.
-- Fixed: dropdown menus opened inside a dialog were hidden behind the backdrop.
+- **Drag to reorder hosts** (cards and list); the order is remembered.
+- Fixed: after closing a terminal, a host stayed "online" if the file page had been opened. Live status now follows terminals only.
+- Cards size to their content, so offline cards are compact and rows no longer show empty space.
+- **One search box**: on the hosts page it filters as you type (Enter opens a terminal on the first match); elsewhere it lists hosts and actions below the box. Ctrl K focuses it.
+- Host page header uses icon buttons: import, and a round "add".
+- **No more white title bar**: window buttons sit in the app's top bar and follow the theme; drag the top bar to move the window.
 
 ## 中文
 
-- **少说话**：主机卡片的操作只留图标（鼠标停留显示说明），去掉各处多余的提示句。
-- **跳板机**：卡片和列表上改为一个路线小标签（图标 + 跳板机名称）。
-- **添加 / 编辑主机**：分组改为一排可点选的标签，新分组直接输入；跳板机改为下拉面板，显示名称和地址。
-- **列表视图重做**：按分组分段，在线主机显示 CPU 走势和内存 / 磁盘环，离线主机显示配置，操作在悬停时出现。
-- **助手首页**居中，新增 4 个常用任务，点一下即可填入；各页空状态重新设计。
-- 修复：在弹框里打开的下拉菜单被遮罩挡住。
+- **主机可以拖动排序**（卡片和列表都可以），顺序会记住。
+- 修复：关掉终端后，如果打开过文件页，主机仍显示在线。现在实时状态只跟终端走。
+- 卡片按内容决定高度：离线卡片更紧凑，不再出现中间空一大块。
+- **一个搜索框**：主机页输入即筛选（回车打开第一台的终端）；其他页面在下方列出主机和操作。Ctrl K 随时聚焦。
+- 主机页右上角改为图标按钮：导入、圆形“添加”。
+- **去掉白色标题栏**：窗口按钮融入应用顶栏，随主题变色；拖动顶栏即可移动窗口。

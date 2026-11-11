@@ -64,6 +64,9 @@ const SHAPES = {
   'folder-plus':
     '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
     '<path d="M12 10.5v5M9.5 13h5"/>',
+  import:
+    '<path d="M14 3H7a2 2 0 0 0-2 2v3M5 16v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5v5h5"/>' +
+    '<path d="M2 12h10M9 9l3 3-3 3"/>',
   'folder-upload':
     '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
     '<path d="M12 16v-5.5M9.5 13l2.5-2.5 2.5 2.5"/>',

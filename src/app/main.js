@@ -44,9 +44,11 @@ function renderShell() {
     <header class="topbar">
       <h1 class="topbar-title" id="page-title">主机</h1>
       <span class="toolbar-spacer"></span>
-      <button class="search-trigger" type="button" id="search-trigger" aria-keyshortcuts="Control+K">
-        ${ico('search', 'sm')}<span>搜索主机或操作…</span><kbd class="kbd">Ctrl K</kbd>
-      </button>
+      <div class="global-search" id="global-search-box">
+        ${ico('search', 'sm')}
+        <input id="global-search" type="text" role="combobox" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list" aria-keyshortcuts="Control+K" aria-label="搜索主机或操作" placeholder="搜索主机或操作…" autocomplete="off" spellcheck="false">
+        <kbd class="kbd">Ctrl K</kbd>
+      </div>
       <button class="btn btn-ghost btn-icon" type="button" id="theme-toggle"></button>
     </header>
     <main class="content" id="main" tabindex="-1">
@@ -66,6 +68,7 @@ function navigate(page, params) {
     else item.removeAttribute('aria-current');
   }
   $('#page-title').textContent = page === 'settings' ? '设置' : PAGES.find(p => p.id === page).label;
+  search.reset(page, previous !== page);
   store.set({ page });
   if (location.hash !== '#' + page) history.replaceState(null, '', '#' + page);
   pages[page].show?.(params);
@@ -169,58 +172,103 @@ async function showPrompt({ id, options }) {
   api.answerPrompt(id, Number.isInteger(index) ? index : 0).catch(() => {});
 }
 
-// ---- command palette (Ctrl K) -------------------------------------------------------
-async function palette() {
-  const hosts = store.get().hosts;
-  const actions = [
-    ...hosts.flatMap(h => [
-      { label: `打开终端 · ${h.name}`, hint: h.address, icon: 'terminal', run: () => navigate('terminal', { hostId: h.id }) },
-      { label: `浏览文件 · ${h.name}`, hint: h.address, icon: 'folder', run: () => navigate('files', { hostId: h.id }) },
-      { label: `交给助手 · ${h.name}`, hint: h.address, icon: 'assistant', run: () => navigate('assistant', { hostIds: [h.id] }) },
+// ---- search (Ctrl K) ----------------------------------------------------------------
+// One box for everything. On the hosts page it filters the cards as you type (Enter opens a
+// terminal on the first match); elsewhere it lists matching hosts and actions below the box.
+const search = (() => {
+  let panel = null, matches = [], active = 0;
+  const input = () => $('#global-search');
+  const actions = () => [
+    ...store.get().hosts.flatMap(h => [
+      { label: h.name, verb: '终端', hint: h.address, icon: 'terminal', run: () => navigate('terminal', { hostId: h.id }) },
+      { label: h.name, verb: '文件', hint: h.address, icon: 'folder', run: () => navigate('files', { hostId: h.id }) },
+      { label: h.name, verb: '助手', hint: h.address, icon: 'assistant', run: () => navigate('assistant', { hostIds: [h.id] }) },
     ]),
     { label: '添加主机', icon: 'plus', run: () => navigate('hosts', { add: true }) },
     { label: '新建助手任务', icon: 'assistant', run: () => navigate('assistant', { compose: true }) },
     { label: '模型设置', icon: 'settings', run: () => navigate('settings', { section: 'model' }) },
-    { label: '切换主题', icon: 'sun', run: () => setPreferences({ theme: store.get().preferences.theme === 'light' ? 'dark' : 'light' }) },
+    { label: '切换主题', icon: store.get().preferences.theme === 'light' ? 'moon' : 'sun', run: () => setPreferences({ theme: store.get().preferences.theme === 'light' ? 'dark' : 'light' }) },
   ];
-  let chosen = null;
-  await dialog({
-    title: '搜索',
-    body: html`
-      <div class="input-group">${ico('search')}<input class="input" id="palette-input" type="text" role="combobox" aria-controls="palette-list" aria-expanded="true" aria-label="搜索主机或操作" placeholder="输入主机名、地址或操作…" autocomplete="off"></div>
-      <ul class="list palette-list" id="palette-list" role="listbox" aria-label="结果"></ul>`,
-    actions: [],
-    onOpen(element) {
-      const input = $('#palette-input', element), list = $('#palette-list', element);
-      let matches = [], active = 0;
-      const draw = () => {
-        const q = input.value.trim().toLowerCase();
-        matches = actions.filter(a => !q || (a.label + ' ' + (a.hint || '')).toLowerCase().includes(q)).slice(0, 12);
-        active = Math.min(active, Math.max(0, matches.length - 1));
-        render(list, matches.length
-          ? html`${matches.map((a, i) => html`<li class="row" role="option" data-index="${i}" aria-selected="${i === active}">${ico(a.icon, 'sm')}<div class="row-main"><span class="row-title">${a.label}</span></div>${a.hint ? html`<span class="row-aside mono">${a.hint}</span>` : ''}</li>`)}`
-          : html`<li class="row"><span class="text-muted">没有匹配的结果</span></li>`);
-      };
-      const pick = index => { chosen = matches[index]; element.close(); };
-      input.addEventListener('input', () => { active = 0; draw(); });
-      input.addEventListener('keydown', event => {
-        if (event.key === 'ArrowDown') { active = Math.min(active + 1, matches.length - 1); draw(); event.preventDefault(); }
-        if (event.key === 'ArrowUp') { active = Math.max(active - 1, 0); draw(); event.preventDefault(); }
-        if (event.key === 'Enter') { event.preventDefault(); if (matches[active]) pick(active); }
-      });
-      on(list, 'click', '[data-index]', (_e, row) => pick(Number(row.dataset.index)));
-      draw();
-      input.focus();
-    },
-  });
-  chosen?.run();
-}
+  const filtering = () => store.get().page === 'hosts';
+  function close() {
+    panel?.remove();
+    panel = null;
+    input()?.setAttribute('aria-expanded', 'false');
+    input()?.removeAttribute('aria-activedescendant');
+  }
+  function draw() {
+    const box = input();
+    const q = box.value.trim().toLowerCase();
+    if (filtering()) { close(); if ((store.get().hostQuery || '') !== box.value) store.set({ hostQuery: box.value }); return; }
+    matches = actions().filter(a => !q || [a.label, a.verb, a.hint].join(' ').toLowerCase().includes(q)).slice(0, 10);
+    active = Math.min(active, Math.max(0, matches.length - 1));
+    if (!panel) {
+      panel = document.createElement('ul');
+      panel.className = 'search-results';
+      panel.id = 'search-results';
+      panel.setAttribute('role', 'listbox');
+      panel.setAttribute('aria-label', '搜索结果');
+      panel.popover = 'manual';
+      document.body.append(panel);
+      panel.showPopover?.();
+      panel.addEventListener('pointerdown', event => event.preventDefault());   // keep focus in the box
+      on(panel, 'click', '[data-index]', (_e, row) => pick(Number(row.dataset.index)));
+      box.setAttribute('aria-expanded', 'true');
+    }
+    const rect = $('#global-search-box').getBoundingClientRect();
+    Object.assign(panel.style, { left: rect.left + 'px', top: rect.bottom + 6 + 'px', width: rect.width + 'px' });
+    render(panel, matches.length
+      ? html`${matches.map((a, i) => html`<li class="search-result" role="option" id="search-option-${i}" data-index="${i}" aria-selected="${i === active}">${ico(a.icon, 'sm')}<span class="search-result-label truncate">${a.label}</span>${a.verb ? html`<span class="search-result-verb">${a.verb}</span>` : ''}<span class="search-result-hint mono truncate">${a.hint || ''}</span></li>`)}`
+      : html`<li class="search-empty">没有匹配的结果</li>`);
+    if (matches.length) box.setAttribute('aria-activedescendant', 'search-option-' + active);
+  }
+  function pick(index) {
+    const chosen = matches[index];
+    input().value = '';
+    close();
+    input().blur();
+    chosen?.run();
+  }
+  function bind() {
+    const box = input();
+    box.addEventListener('focus', draw);
+    box.addEventListener('input', () => { active = 0; draw(); });
+    box.addEventListener('blur', () => setTimeout(close, 0));
+    box.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { event.preventDefault(); if (box.value) { box.value = ''; draw(); } else { close(); box.blur(); } return; }
+      if (filtering()) {
+        if (event.key === 'Enter') {
+          const first = document.querySelector('#view-hosts [data-host]');
+          if (first) { box.blur(); navigate('terminal', { hostId: first.dataset.host }); }
+        }
+        return;
+      }
+      if (event.key === 'ArrowDown') { event.preventDefault(); active = Math.min(active + 1, matches.length - 1); draw(); }
+      if (event.key === 'ArrowUp') { event.preventDefault(); active = Math.max(active - 1, 0); draw(); }
+      if (event.key === 'Enter') { event.preventDefault(); if (matches[active]) pick(active); }
+    });
+    addEventListener('resize', () => { if (panel) draw(); });
+  }
+  // Leaving a page clears the box; the hosts page names what the box does there.
+  function reset(page, leaving) {
+    const box = input();
+    if (!box) return;
+    if (leaving) {
+      box.value = '';
+      close();
+      if (store.get().hostQuery) store.set({ hostQuery: '' });
+    }
+    box.placeholder = page === 'hosts' ? '搜索主机…' : '搜索主机或操作…';
+  }
+  return { bind, reset, focus: () => { input().focus(); input().select(); } };
+})();
 
 // ---- boot -----------------------------------------------------------------------------
 async function boot() {
   renderShell();
   const initial = await api.init();
   store.set({ hosts: initial.hosts, preferences: initial.preferences, version: initial.version });
+  document.documentElement.dataset.platform = initial.platform;   // window buttons sit in our top bar
   for (const metrics of initial.metrics || []) app.telemetry.accept(metrics);
   applyTheme();
 
@@ -239,10 +287,10 @@ async function boot() {
   });
 
   $('#theme-toggle').addEventListener('click', () => setPreferences({ theme: store.get().preferences.theme === 'light' ? 'dark' : 'light' }));
-  $('#search-trigger').addEventListener('click', palette);
+  search.bind();
   on($('.rail'), 'click', '[data-page]', (event, item) => { event.preventDefault(); navigate(item.dataset.page); });
   document.addEventListener('keydown', event => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); palette(); }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); search.focus(); }
   });
 
   const migrated = initial.migration;
