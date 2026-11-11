@@ -243,6 +243,7 @@ export function createHostsPage(element, app) {
         <div class="field" data-for="password" ${isKey ? raw('hidden') : ''}>
           <label class="field-label" for="h-password">密码${host?.hasPassword ? raw('<span class="optional">已保存</span>') : ''}</label>
           <input class="input" id="h-password" name="password" type="password" autocomplete="new-password" placeholder="${host?.hasPassword ? '留空保持不变' : '留空则连接时再问'}">
+          <p class="field-note" id="h-pw-note" aria-live="polite" hidden>${ico('status-warning', 'sm')}<span>密码少于 8 位：出现在命令输出里时，助手无法先把它隐藏再发给模型</span></p>
           <label class="check"><input type="checkbox" name="rememberPassword" ${!host || host.hasPassword ? raw('checked') : ''}><span title="用系统加密保存在本机，不会上传">记住密码</span></label>
         </div>
         <div class="field" data-for="key" ${isKey ? '' : raw('hidden')}>
@@ -281,6 +282,8 @@ export function createHostsPage(element, app) {
           $('#h-key', dialogElement).required = button.dataset.auth === 'key';
         });
         $('#h-key', dialogElement).required = isKey;
+        const pw = $('#h-password', dialogElement), pwNote = $('#h-pw-note', dialogElement);
+        pw.addEventListener('input', () => { pwNote.hidden = !(pw.value.length > 0 && pw.value.length < 8); });
         // Group: one click on a chip, or type a new name.
         const groupInput = $('input[name="group"]', dialogElement);
         const chips = $('#h-group', dialogElement);

@@ -15,7 +15,7 @@ const { TaskStore, now } = require('./store.cjs');
 const { TOOLS, MUTATING, toolsFor, validate, define } = require('./tools.cjs');
 const prompt = require('./prompt.cjs');
 const model = require('./model.cjs');
-const { createRedactor } = require('./redact.cjs');
+const { createRedactor, MIN_LITERAL_LENGTH } = require('./redact.cjs');
 const { riskOf, approvalKey } = require('./risk.cjs');
 const { AgentRemote, quote } = require('../agent-remote.cjs');
 const { AgentConsole } = require('../agent-console.cjs');
@@ -396,6 +396,24 @@ class AgentService {
     }
   }
 
+  // A short password cannot be hidden reliably in free-form output. Say so once per host and
+  // password (not in every conversation): the record keeps only a hash, never the password.
+  noticeWeakSecrets(task, auth) {
+    const seen = new Set(this.store.read('notices.json', {}).weakSecrets || []);
+    const fresh = [];
+    for (const [hostId, item] of Object.entries(auth)) {
+      for (const secret of Object.values(item)) {
+        if (!secret || secret.length >= MIN_LITERAL_LENGTH) continue;
+        const mark = createHash('sha256').update(hostId + '\0' + secret).digest('hex').slice(0, 16);
+        if (!seen.has(mark)) { seen.add(mark); fresh.push(hostId); }
+      }
+    }
+    if (!fresh.length) return;
+    const names = fresh.map(id => this.hosts.list().find(h => h.id === id)?.name || id);
+    this.event(task, 'notice', `${names.join('、')} 的密码少于 8 个字符，服务器输出中出现的这个密码无法可靠隐藏。建议改用更长的密码或密钥登录。`);
+    this.store.write('notices.json', { ...this.store.read('notices.json', {}), weakSecrets: [...seen] });
+  }
+
   launch(task, credentials) {
     const settings = { ...this.store.settings };
     const key = this.store.key();
@@ -444,10 +462,7 @@ class AgentService {
       delete task.pendingContext;
     }
 
-    if (redact.weak && !task.weakSecretNoticed) {
-      task.weakSecretNoticed = true;
-      this.event(task, 'notice', '有主机密码少于 8 个字符，服务器输出中出现的该密码无法可靠隐藏。建议改用更长的密码或密钥登录。');
-    }
+    if (redact.weak) this.noticeWeakSecrets(task, auth);
 
     this.runs.set(task.id, run);
     task.status = 'running';

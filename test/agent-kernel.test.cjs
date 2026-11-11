@@ -103,6 +103,17 @@ test('short passwords are never replaced literally; long secrets and token forma
   assert.equal(createRedactor(['long-enough-secret']).weak, false);
 });
 
+test('a short host password is pointed out once, not in every conversation; only a hash is kept', async t => {
+  const { agent } = setup(t, { script: () => reply([], '好的。') });
+  const weakNotices = task => task.events.filter(e => e.type === 'notice' && /少于 8 个字符/.test(e.content));
+  const first = await runTask(agent, { prompt: '看看负载' });
+  const second = await runTask(agent, { prompt: '看看磁盘' });
+  assert.equal(weakNotices(first).length, 1);
+  assert.match(weakNotices(first)[0].content, /^web 的密码/);
+  assert.equal(weakNotices(second).length, 0);
+  assert.ok(!JSON.stringify(agent.store.read('notices.json', {})).includes('root'));
+});
+
 // ---- invariant 7: executed arguments are untouched ---------------------------
 
 test('commands run exactly as the model wrote them, even when they contain the password', async t => {

@@ -289,6 +289,10 @@
 .terminal-pane { padding: var(--sp-3) 0 var(--sp-2) var(--sp-4); box-sizing: content-box; }
 /* The space under the last row (less than one row) shows xterm's own layers: paint them like the terminal. */
 .terminal-pane .xterm-viewport, .terminal-pane .xterm-scrollable-element { background-color: var(--terminal-bg) !important; }
+/* xterm draws its own scrollbar; the viewport's native one only adds arrow buttons in the corner. */
+.terminal-pane .xterm-viewport { scrollbar-width: none; }
+.terminal-pane .xterm-scrollable-element > .scrollbar > .slider { background: color-mix(in srgb, var(--text) 22%, transparent) !important; border-radius: 4px; }
+.terminal-pane .xterm-scrollable-element > .scrollbar > .slider:hover, .terminal-pane .xterm-scrollable-element > .scrollbar > .slider.active { background: color-mix(in srgb, var(--text) 36%, transparent) !important; }
 .terminal-status {
   display: flex; align-items: center; gap: var(--sp-4); min-height: 30px; padding: 0 var(--sp-4);
   border-top: var(--border) solid var(--line); background: var(--sidebar-bg);
@@ -700,6 +704,8 @@ div.setting { cursor: default; }
 /* Connection route under the jump picker: 本机 › bastion › gateway › host */
 .route-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-1); margin: var(--sp-1) 0 0; color: var(--muted); font-size: var(--fs-xs); }
 .route-line:empty { display: none; }
+.field-note { display: flex; align-items: flex-start; gap: var(--sp-1); margin: var(--sp-1) 0 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.5; }
+.field-note .icon { flex: none; width: 14px; height: 14px; margin-top: 2px; color: var(--warning); }
 .route-line .icon { width: 12px; height: 12px; color: var(--data-net); }
 .route-target { color: var(--text); font-weight: var(--fw-strong); }
 

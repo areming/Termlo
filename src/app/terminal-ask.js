@@ -8,6 +8,7 @@
 // While a session is open, shell output is held and keystrokes go to the session; Esc on the
 // reply prompt hands the shell back. The conversation also shows on the assistant page.
 import { api } from './ui.js';
+import { cellWidth, row, tail, hang } from './term-text.mjs';
 
 // ---- the shell line -------------------------------------------------------------------
 
@@ -43,36 +44,6 @@ const dim = text => sgr('2', text);
 const GUARD = /先用 inspect|先用 read_file|现场验证|不能标记完成|还有命令在运行|逐项报告|不在本任务范围|规划阶段不能/;
 const SPIN = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
 const HIDE_CURSOR = '\x1b[?25l', SHOW_CURSOR = '\x1b[?25h';
-
-function cellWidth(ch) {
-  const c = ch.codePointAt(0);
-  return c >= 0x1100 && (c <= 0x115f || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7a3) || (c >= 0xf900 && c <= 0xfaff)
-    || (c >= 0xfe30 && c <= 0xfe4f) || (c >= 0xff00 && c <= 0xff60) || (c >= 0xffe0 && c <= 0xffe6) || (c >= 0x1f300 && c <= 0x1faff) || c >= 0x20000) ? 2 : 1;
-}
-
-// One live row: [style, text] parts cut to the terminal width, so the live region's height is
-// exactly its number of rows and can be redrawn in place.
-function row(width, ...parts) {
-  let out = '', used = 0;
-  for (const [style, text] of parts) {
-    let piece = '';
-    for (const ch of String(text).replace(/[\x00-\x1f\x7f]/g, ' ')) {
-      const w = cellWidth(ch);
-      if (used + w > width - 2) { out += style ? sgr(style, piece + '…') : piece + '…'; return out; }
-      piece += ch; used += w;
-    }
-    out += style ? sgr(style, piece) : piece;
-  }
-  return out;
-}
-
-// The end of a long input line, so the cursor stays visible.
-function tail(text, width) {
-  const chars = [...text];
-  let used = 0, i = chars.length;
-  while (i > 0 && used + cellWidth(chars[i - 1]) <= width) used += cellWidth(chars[--i]);
-  return (i > 0 ? '…' : '') + chars.slice(i).join('');
-}
 
 // Light Markdown for the model's prose: **bold**, `code`, headings, fenced code.
 function prose(text) {
@@ -253,7 +224,7 @@ class Session {
   // Committed text goes above the live region and stays.
   commit(text) {
     this.clearLive();
-    this.write(text);
+    this.write(hang(text, this.term.cols));
     this.draw();
   }
   draw() {
@@ -313,7 +284,7 @@ class Session {
       this.printed.add(event.id);
       out += text;
     }
-    if (out) { this.clearLive(); this.write(out); }
+    if (out) { this.clearLive(); this.write(hang(out, this.term.cols)); }
     if (running) {
       const tool = [...task.events].reverse().find(e => e.type === 'tool' && e.status === 'running');
       const streaming = task.events.at(-1)?.streaming;
@@ -420,7 +391,7 @@ class Session {
   fail(error) {
     this.stopSpin();
     this.clearLive();
-    this.write(sgr('31', '✕ ' + String(error?.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')) + '\r\n');
+    this.write(hang(sgr('31', '✕ ' + String(error?.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')), this.term.cols) + '\r\n');
     if (!this.taskId) return this.close();
     this.phase = 'starting';
     this.refresh();
@@ -455,7 +426,7 @@ class Session {
         return this.act(api.agentAnswer({ id: this.taskId, requestId: request.id, answers, credentials: this.credentials }));
       }
       this.commit(sgr('36', '? ') + sgr('1', q.question) + '\r\n');
-      const typed = () => this.reply(`${key}:${q.id}:text`, '输入回答，↵ 发送 · Esc 回到命令行', text => { answers.push({ questionId: q.id, text }); this.clearLive(); this.write(dim('  → ' + text) + '\r\n'); next(); });
+      const typed = () => this.reply(`${key}:${q.id}:text`, '输入回答，↵ 发送 · Esc 回到命令行', text => { answers.push({ questionId: q.id, text }); this.clearLive(); this.write(hang(dim('  → ' + text), this.term.cols) + '\r\n'); next(); });
       if (!q.options.length) return typed();
       const options = q.options.map((o, i) => ({ label: o.label + (i === q.recommendedOption ? '（推荐）' : ''), hint: o.description, run: () => { answers.push({ questionId: q.id, optionIndex: i }); next(); } }));
       options.push({ label: '自己输入…', run: typed });
@@ -473,7 +444,7 @@ class Session {
     const ended = status === 'completed' || status === 'failed';
     this.reply('reply:' + (task?.events.at(-1)?.id || ''), hint || (ended ? '↵ 接着问 · Esc 回到命令行' : '回复助手，↵ 发送 · Esc 回到命令行'), text => {
       this.clearLive();
-      this.write(sgr('36;1', '› ') + text + '\r\n\r\n');
+      this.write(hang(sgr('36;1', '› ') + text, this.term.cols) + '\r\n\r\n');
       this.phase = 'running'; this.since = Date.now(); this.spin('思考中');
       this.act(api.agentResume({ id: this.taskId, message: text, credentials: this.credentials }));
     });
