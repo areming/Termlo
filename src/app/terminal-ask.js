@@ -1,11 +1,15 @@
-// Natural language in the command line: type "# 问题" at the prompt and press Enter.
-// The line is a shell comment, so nothing runs if this is triggered by mistake. The question
-// goes to the model with the last lines of the screen (redacted in the main process) and comes
-// back as commands in a bar over the bottom of the terminal:
-//   ↵ run in this shell · Tab put it on the command line · Esc close.
-// Risky commands (same rules as the assistant's risk gate) need ↵ twice. Jobs that need many
-// steps can be handed to the assistant, which works on its own connection in the background.
-import { api, html, ico, render, $, on, toast, fail, message } from './ui.js';
+// The assistant inside the command line. Type "# 问题" at the prompt and press Enter: the shell
+// gets a comment (does nothing; the question stays in the scrollback) and the same assistant as
+// the assistant page takes over this terminal until it is done — it looks around on its own
+// connection, thinks, acts, and asks here when it needs a decision:
+//   ● text   ● tool  ⎿ result        (committed lines, scroll like normal output)
+//   ✻ 思考中… (12s · Esc 中断)         (live region: spinner, menus, the reply prompt)
+// Risky operations stop at the same risk gate (↑↓ ↵ to allow or not), plans wait for "执行方案".
+// While a session is open, shell output is held and keystrokes go to the session; Esc on the
+// reply prompt hands the shell back. The conversation also shows on the assistant page.
+import { api } from './ui.js';
+
+// ---- the shell line -------------------------------------------------------------------
 
 // What the user has typed on the current shell line, as far as we can tell. null = unknown
 // (history recall, completion, cursor movement): then "#" is never intercepted.
@@ -32,153 +36,514 @@ export function screenText(term, lines = 40) {
   return out.join('\n').replace(/\s+$/, '');
 }
 
-export function createAsk({ host: container, before = null, app, onResize = () => {} }) {
-  const bar = document.createElement('div');
-  bar.className = 'ask-bar';
-  bar.hidden = true;
-  bar.setAttribute('role', 'dialog');
-  bar.setAttribute('aria-label', '问 AI');
-  // Part of the layout (between the terminal and the status bar): the terminal shrinks, so the
-  // prompt and the latest output stay visible.
-  container.insertBefore(bar, before);
-  new ResizeObserver(() => onResize()).observe(bar);
-  let state = null;   // { tab, question, screen, phase: 'asking'|'answer'|'error', answer, selected, armed, error, seq }
-  let seq = 0;
+// ---- drawing helpers --------------------------------------------------------------------
 
-  function draw() {
-    if (!state) { bar.hidden = true; return; }
-    bar.hidden = false;
-    const { phase, answer } = state;
-    render(bar, html`
-      <form class="ask-head" data-ask-form>
-        <span class="ask-mark" aria-hidden="true">${ico('assistant', 'sm')}</span>
-        <input class="ask-input" name="q" value="${state.question}" placeholder="用一句话描述要做什么…" aria-label="问题" autocomplete="off" spellcheck="false">
-        ${phase === 'asking' ? html`<span class="spinner" aria-label="思考中"></span>` : ''}
-        <button class="btn btn-icon btn-sm btn-ghost" type="button" data-ask="close" aria-label="关闭" title="关闭 (Esc)">${ico('close', 'sm')}</button>
-      </form>
-      ${phase === 'error' ? html`<p class="ask-note" data-tone="danger">${ico('status-warning', 'sm')}${state.error}${state.setup ? html` <button class="btn btn-sm btn-ghost" type="button" data-ask="settings">去设置</button>` : ''}</p>` : ''}
-      ${phase === 'answer' ? html`
-        ${answer.note ? html`<p class="ask-note">${answer.note}</p>` : ''}
-        ${answer.commands.length ? html`
-          <ul class="ask-commands" role="listbox" aria-label="命令" tabindex="0" data-ask-list>
-            ${answer.commands.map((c, i) => html`
-              <li class="ask-command" role="option" aria-selected="${i === state.selected}" data-index="${i}">
-                <code translate="no">${c.command}</code>
-                ${c.explain ? html`<span class="ask-explain">${c.explain}</span>` : ''}
-                ${c.risk ? html`<span class="ask-risk">${ico('status-warning', 'sm')}${c.risk}${i === state.selected && state.armed ? '，再按 ↵ 运行' : ''}</span>` : ''}
-              </li>`)}
-          </ul>` : ''}
-        <div class="ask-foot">
-          ${answer.commands.length ? html`
-            <button class="btn btn-sm ${answer.commands[state.selected]?.risk ? 'btn-danger' : 'btn-primary'}" type="button" data-ask="run">${ico('play', 'sm')}运行<kbd>↵</kbd></button>
-            <button class="btn btn-sm" type="button" data-ask="insert">放到命令行<kbd>Tab</kbd></button>
-            <button class="btn btn-icon btn-sm btn-ghost" type="button" data-ask="copy" aria-label="复制命令" title="复制命令">${ico('copy', 'sm')}</button>` : ''}
-          <span class="toolbar-spacer"></span>
-          <button class="btn btn-sm ${answer.handoff ? 'btn-primary' : 'btn-ghost'}" type="button" data-ask="handoff" title="助手用自己的连接在后台一步步完成，危险操作会先问你">${ico('assistant', 'sm')}交给助手完成</button>
-        </div>` : ''}`);
-  }
+const sgr = (code, text) => `\x1b[${code}m${text}\x1b[0m`;
+const dim = text => sgr('2', text);
+const GUARD = /先用 inspect|先用 read_file|现场验证|不能标记完成|还有命令在运行|逐项报告|不在本任务范围|规划阶段不能/;
+const SPIN = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
+const HIDE_CURSOR = '\x1b[?25l', SHOW_CURSOR = '\x1b[?25h';
 
-  async function ask(tab, question, screen = screenText(tab.term)) {
-    const mine = ++seq;
-    state = { tab, question, screen, phase: 'asking', selected: 0, armed: false };
-    draw();
-    try {
-      const answer = await api.agentSuggest({ hostId: tab.hostId, question, screen });
-      if (mine !== seq || !state) return;
-      state = { ...state, phase: 'answer', answer };
-      draw();
-      ($('[data-ask-list]', bar) || $('[data-ask="handoff"]', bar))?.focus();
-    } catch (error) {
-      if (mine !== seq || !state) return;
-      const text = message(error);
-      state = { ...state, phase: 'error', error: text, setup: /配置模型/.test(text) };
-      draw();
-      $('.ask-input', bar)?.focus();
+function cellWidth(ch) {
+  const c = ch.codePointAt(0);
+  return c >= 0x1100 && (c <= 0x115f || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7a3) || (c >= 0xf900 && c <= 0xfaff)
+    || (c >= 0xfe30 && c <= 0xfe4f) || (c >= 0xff00 && c <= 0xff60) || (c >= 0xffe0 && c <= 0xffe6) || (c >= 0x1f300 && c <= 0x1faff) || c >= 0x20000) ? 2 : 1;
+}
+
+// One live row: [style, text] parts cut to the terminal width, so the live region's height is
+// exactly its number of rows and can be redrawn in place.
+function row(width, ...parts) {
+  let out = '', used = 0;
+  for (const [style, text] of parts) {
+    let piece = '';
+    for (const ch of String(text).replace(/[\x00-\x1f\x7f]/g, ' ')) {
+      const w = cellWidth(ch);
+      if (used + w > width - 2) { out += style ? sgr(style, piece + '…') : piece + '…'; return out; }
+      piece += ch; used += w;
     }
+    out += style ? sgr(style, piece) : piece;
+  }
+  return out;
+}
+
+// The end of a long input line, so the cursor stays visible.
+function tail(text, width) {
+  const chars = [...text];
+  let used = 0, i = chars.length;
+  while (i > 0 && used + cellWidth(chars[i - 1]) <= width) used += cellWidth(chars[--i]);
+  return (i > 0 ? '…' : '') + chars.slice(i).join('');
+}
+
+// Light Markdown for the model's prose: **bold**, `code`, headings, fenced code.
+function prose(text) {
+  let code = false;
+  const out = [];
+  for (const raw of String(text || '').replace(/\r/g, '').trim().split('\n')) {
+    if (/^\s*```/.test(raw)) { code = !code; continue; }
+    if (code) { out.push(sgr('36', raw)); continue; }
+    out.push(raw
+      .replace(/^#{1,6}\s+(.*)$/, (_m, t) => `\x1b[1m${t}\x1b[22m`)
+      .replace(/\*\*(.+?)\*\*/g, (_m, t) => `\x1b[1m${t}\x1b[22m`)
+      .replace(/`([^`\n]+)`/g, (_m, t) => `\x1b[36m${t}\x1b[39m`));
+  }
+  return out;
+}
+// "● first line" then the rest indented under it.
+const bullet = (mark, lines) => lines.map((line, i) => (i ? '  ' : mark + ' ') + line).join('\r\n') + '\r\n';
+
+const shorten = (text, n = 60) => { const line = String(text || '').trim().split('\n')[0]; return line.length > n ? line.slice(0, n - 1) + '…' : line; };
+const basename = path => String(path || '').split('/').filter(Boolean).pop() || path;
+function toolLabel(event) {
+  const a = event.args || {};
+  switch (event.name) {
+    case 'run': return `运行 ${shorten(a.command, 80)}`;
+    case 'inspect': return { overview: '检查系统概况', docker: '查看 Docker 容器', service: `检查服务 ${a.target || ''}`, process: `查找进程 ${a.target || ''}` }[a.topic] || '只读检查';
+    case 'read_file': return `读取 ${a.path || ''}`;
+    case 'write_file': return `修改 ${a.path || ''}（可撤销）`;
+    case 'upload': return '上传附件';
+    case 'wait': return '等待后台命令';
+    case 'cancel': return '停止后台命令';
+    case 'web': return a.query ? `搜索 ${shorten(a.query, 50)}` : `读取网页 ${shorten(a.url, 50)}`;
+    default: return '';   // ask / plan / finish show as their own blocks
+  }
+}
+
+// ---- sessions ---------------------------------------------------------------------------
+
+export function createTerminalAI({ app }) {
+  const sessions = new Map();   // taskId -> session
+
+  app.on('agent', event => { const s = sessions.get(event.taskId); if (s) s.refresh(); });
+  app.on('agent-thinking', event => { const s = sessions.get(event.taskId); if (s) s.preview = event.preview || ''; });
+
+  function begin(tab, question, { context } = {}) {
+    if (tab.ai) return;
+    const s = new Session(tab, sessions, app);
+    tab.ai = s;
+    s.open(question, context ?? screenText(tab.term));
   }
 
-  function close() {
-    const tab = state?.tab;
-    seq++;
-    state = null;
-    draw();
-    tab?.term.focus();
-  }
-
-  function selected() { return state?.answer?.commands[state.selected]; }
-
-  function run() {
-    const command = selected();
-    if (!command || state.tab.status !== 'ready') return;
-    if (command.risk && !state.armed) { state.armed = true; draw(); $('[data-ask-list]', bar)?.focus(); return; }
-    api.write(state.tab.id, command.command.replace(/\r?\n/g, '\r') + '\r');
-    state.tab.line = '';
-    close();
-  }
-
-  function insert() {
-    const command = selected();
-    if (!command || state.tab.status !== 'ready') return;
-    const text = command.command.replace(/\r?\n/g, ' ');
-    api.write(state.tab.id, text);
-    state.tab.line = text;
-    close();
-  }
-
-  async function handoff() {
-    const { tab, question, screen } = state;
-    const credentials = await app.credentials(tab.hostId);
-    if (!credentials) return;
-    try {
-      const prompt = `${question}\n\n（来自 ${app.hostLabel(tab.hostId)} 的终端，屏幕最近内容：）\n\`\`\`\n${screen.slice(-3000)}\n\`\`\``;
-      const { id } = await api.agentStart({ prompt, hostIds: [tab.hostId], credentials });
-      close();
-      toast('已交给助手，在后台处理', { action: '查看', onAction: () => app.navigate('assistant', { taskId: id }), timeout: 6000 });
-    } catch (error) { fail(error); }
-  }
-
-  bar.addEventListener('submit', event => {
-    event.preventDefault();
-    const question = event.target.q.value.trim();
-    if (question && state) ask(state.tab, question, state.screen);
-  });
-  bar.addEventListener('keydown', event => {
-    if (!state) return;
-    if (event.key === 'Escape') { event.preventDefault(); close(); return; }
-    if (!event.target.closest('[data-ask-list]')) return;
-    const count = state.answer?.commands.length || 0;
-    if (event.key === 'Enter') { event.preventDefault(); run(); }
-    else if (event.key === 'Tab' && !event.shiftKey) { event.preventDefault(); insert(); }
-    else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && count) {
-      event.preventDefault();
-      state.selected = (state.selected + (event.key === 'ArrowDown' ? 1 : count - 1)) % count;
-      state.armed = false;
-      draw(); $('[data-ask-list]', bar)?.focus();
-    } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
-      $('.ask-input', bar)?.focus();   // typing refines the question
+  // "问 AI" from the menu or the tab bar: put "# " on an empty shell line, or ask straight away
+  // about a selection (typed into the shell as a comment, so it is in the scrollback too).
+  function prompt(tab, { question, context } = {}) {
+    if (tab.ai || tab.status !== 'ready') return;
+    tab.term.focus();
+    if (!question) {
+      if (tab.line === '') { api.write(tab.id, '# '); tab.line = '# '; }
+      return;
     }
-  });
-  on(bar, 'click', '[data-index]', (_e, item) => { state.selected = Number(item.dataset.index); state.armed = false; draw(); $('[data-ask-list]', bar)?.focus(); });
-  on(bar, 'click', '[data-ask]', (_e, button) => {
-    const action = button.dataset.ask;
-    if (action === 'close') close();
-    else if (action === 'run') run();
-    else if (action === 'insert') insert();
-    else if (action === 'copy') api.writeClipboard(selected()?.command || '').then(() => toast('已复制')).catch(fail);
-    else if (action === 'handoff') handoff();
-    else if (action === 'settings') { close(); app.navigate('settings', { section: 'model' }); }
-  });
+    const clear = tab.line === '' ? '' : '\x05\x15';   // end of line, kill it (Ctrl+Y brings it back)
+    api.write(tab.id, clear + '# ' + question);
+    tab.line = '';
+    setTimeout(() => { if (!tab.ai && tab.status === 'ready') begin(tab, question, { context }); }, 250);   // let the echo land first
+  }
 
   return {
-    ask,
-    open(tab, { question = '', screen } = {}) {
-      state = { tab, question, screen: screen ?? screenText(tab.term), phase: 'idle', selected: 0, armed: false };
-      draw();
-      const input = $('.ask-input', bar);
-      input?.focus();
-      input?.setSelectionRange(input.value.length, input.value.length);
-    },
-    close,
-    get openFor() { return state?.tab || null; },
+    begin, prompt,
+    key: (tab, data) => tab.ai?.key(data),
+    hold: (tab, bytes) => tab.ai ? (tab.ai.hold(bytes), true) : false,
+    detach: tab => tab.ai?.detach(),
   };
+}
+
+class Session {
+  constructor(tab, registry, app) {
+    Object.assign(this, {
+      tab, registry, app, busy: false, epoch: 0, term: tab.term, held: [], heldBytes: 0, live: 0, phase: 'starting', menu: null, input: null,
+      printed: new Set(), done: new Set(), preview: '', frame: 0, since: Date.now(), task: null, taskId: null, credentials: null,
+      timer: null, fetching: false, again: false, label: '',
+      echoing: true,   // shell output passes through until the newline after the comment
+    });
+    this.echoed = new Promise(resolve => { this.onEcho = resolve; });
+  }
+
+  // ---- lifecycle ----
+  async open(question, context) {
+    api.write(this.tab.id, '\r');   // the shell runs the comment; the rest of its echo and the newline pass, the next prompt is held
+    const echoed = await Promise.race([this.echoed.then(() => true), new Promise(resolve => setTimeout(resolve, 1500, false))]);
+    if (this.phase === 'ended') return;
+    if (!echoed) { this.echoing = false; this.write('\r\n'); }   // a silent shell: move on ourselves
+    this.write(HIDE_CURSOR);
+    this.spin('准备中');
+    try {
+      const { settings } = await api.agentState();
+      if (!settings?.baseUrl || !settings?.model || !settings?.hasKey) {
+        return this.close(sgr('33', '! 还没有配置模型。') + dim('在 设置 › 模型 里填好地址、模型和密钥后再试。') + '\r\n');
+      }
+      this.credentials = await this.app.credentials(this.tab.hostId);
+      if (!this.credentials) return this.close(dim('已取消') + '\r\n');
+      // Follow-up questions in the same tab continue the same conversation for a while.
+      const previous = this.tab.aiTask && Date.now() - this.tab.aiTask.at < 30 * 60000 ? this.tab.aiTask.id : null;
+      let id;
+      if (previous) {
+        try {
+          const old = await api.agentTask(previous);
+          for (const e of old.events) this.printed.add(e.id);
+          ({ id } = await api.agentResume({ id: previous, message: question, credentials: this.credentials, context }));
+        } catch { id = null; }
+      }
+      if (!id) ({ id } = await api.agentStart({ prompt: question, hostIds: [this.tab.hostId], credentials: this.credentials, context, origin: 'terminal' }));
+      this.taskId = id;
+      this.tab.aiTask = { id, at: Date.now() };
+      this.registry.set(id, this);
+      this.phase = 'running';
+      this.refresh();
+    } catch (error) {
+      this.close(sgr('31', '✕ ' + (error?.message || String(error)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')) + '\r\n');
+    }
+  }
+
+  // Hand the shell back: drop the live region, show the held prompt.
+  close(lastWords = '') {
+    this.stopSpin();
+    this.clearLive();
+    this.write(lastWords + SHOW_CURSOR);
+    this.phase = 'ended';
+    if (this.taskId) this.registry.delete(this.taskId);
+    this.tab.ai = null;
+    this.tab.line = '';
+    let first = !this.sawNewline;
+    for (const chunk of this.held) {
+      let bytes = chunk;
+      if (first && bytes.length) {   // a late newline from the shell: we are already on a fresh line
+        if (bytes[0] === 13 && bytes[1] === 10) bytes = bytes.subarray(2); else if (bytes[0] === 10) bytes = bytes.subarray(1);
+        first = false;
+      }
+      this.term.write(bytes);
+    }
+    this.held = [];
+    this.term.focus();
+  }
+
+  // The tab closed or the connection dropped: stop drawing; the conversation goes on in the assistant.
+  detach() {
+    this.stopSpin();
+    if (this.live) this.clearLive();
+    this.write(SHOW_CURSOR);
+    this.phase = 'ended';
+    if (this.taskId) this.registry.delete(this.taskId);
+    this.tab.ai = null;
+    this.held = [];
+  }
+
+  hold(bytes) {
+    if (this.echoing) {
+      const newline = bytes.indexOf(10);
+      if (newline < 0) { this.term.write(bytes); return; }
+      this.term.write(bytes.subarray(0, newline + 1));
+      this.echoing = false;
+      this.sawNewline = true;
+      this.onEcho();
+      bytes = bytes.subarray(newline + 1);
+      if (!bytes.length) return;
+    }
+    this.held.push(bytes);
+    this.heldBytes += bytes.length;
+    while (this.heldBytes > 1 << 20 && this.held.length > 1) this.heldBytes -= this.held.shift().length;
+  }
+
+  write(text) { this.term.write(text); }
+
+  // ---- live region ----
+  clearLive() {
+    if (!this.live) return;
+    this.write('\r' + (this.live > 1 ? `\x1b[${this.live - 1}A` : '') + '\x1b[J');
+    this.live = 0;
+  }
+  // Committed text goes above the live region and stays.
+  commit(text) {
+    this.clearLive();
+    this.write(text);
+    this.draw();
+  }
+  draw() {
+    if (this.phase === 'ended') return;
+    const width = Math.max(20, this.term.cols);
+    const rows = [];
+    if (this.phase === 'running' || this.phase === 'starting') {
+      const glyph = SPIN[this.frame % SPIN.length];
+      const seconds = Math.floor((Date.now() - this.since) / 1000);
+      rows.push(row(width, ['36', glyph + ' '], ...shimmer(this.label || '思考中', this.frame), ['2', `  ${seconds}s · Esc 中断`]));
+      if (this.preview && !this.label.startsWith('运行')) rows.push(row(width, ['2', '  ⎿ ' + this.preview]));
+    } else if (this.phase === 'menu') {
+      const { options, index } = this.menu;
+      options.forEach((option, i) => rows.push(i === index
+        ? row(width, ['36;1', `❯ ${i + 1}. ${option.label}`], ['2', option.hint ? '  ' + option.hint : ''])
+        : row(width, ['', `  ${i + 1}. ${option.label}`], ['2', option.hint ? '  ' + option.hint : ''])));
+      rows.push(row(width, ['2', `  ↑↓ 选择 · ↵ 确认 · Esc ${this.menu.escLabel || '取消'}`]));
+    } else if (this.phase === 'input') {
+      rows.push(row(width, ['2', this.input.hint]));
+      rows.push(sgr('36;1', '› ') + tail(this.input.text, width - 4));
+    }
+    this.write((this.phase === 'input' ? SHOW_CURSOR : HIDE_CURSOR) + rows.join('\r\n'));
+    this.live = rows.length;
+  }
+  redraw() { if (this.phase !== 'ended') { this.clearLive(); this.draw(); } }
+
+  spin(label) {
+    this.phase = this.phase === 'starting' ? 'starting' : 'running';
+    this.label = label || '';
+    if (!this.timer) this.timer = setInterval(() => { this.frame++; this.redraw(); }, 110);
+    this.redraw();
+  }
+  stopSpin() { clearInterval(this.timer); this.timer = null; }
+
+  // ---- task updates ----
+  async refresh() {
+    if (!this.taskId || this.phase === 'ended' || this.busy) return;   // act() refreshes when the action is done
+    if (this.fetching) { this.again = true; return; }
+    this.fetching = true;
+    const epoch = this.epoch;
+    try {
+      const [task, state] = await Promise.all([api.agentTask(this.taskId), api.agentState()]);
+      if (this.phase !== 'ended' && !this.busy && epoch === this.epoch) this.sync(task, state.runningIds?.includes(this.taskId));
+      else this.again = true;
+    } catch { /* the next event retries */ }
+    this.fetching = false;
+    if (this.again) { this.again = false; this.refresh(); }
+  }
+
+  sync(task, running) {
+    this.task = task;
+    let out = '';
+    for (const event of task.events) {
+      if (this.printed.has(event.id)) continue;
+      const text = this.render(event, task);
+      if (text === null) continue;   // not final yet
+      this.printed.add(event.id);
+      out += text;
+    }
+    if (out) { this.clearLive(); this.write(out); }
+    if (running) {
+      const tool = [...task.events].reverse().find(e => e.type === 'tool' && e.status === 'running');
+      const streaming = task.events.at(-1)?.streaming;
+      if (this.phase !== 'running') { this.phase = 'running'; }
+      this.label = tool ? toolLabel(tool) || '执行中' : streaming ? '回答中' : '思考中';
+      if (!this.timer) this.spin(this.label); else this.redraw();
+      return;
+    }
+    this.stopSpin();
+    this.preview = '';
+    const pending = task.interaction?.status === 'pending' ? task.interaction : null;
+    if (pending?.kind === 'approval') return this.approvalMenu(pending);
+    if (pending?.questions) return this.questionFlow(pending);
+    if (task.status === 'plan_ready' && task.proposal && !task.proposal.questions?.length) return this.planMenu(task.proposal);
+    this.askReply(task);
+  }
+
+  // Committed text for one event; '' to skip it, null if it is not final yet.
+  render(event, task) {
+    switch (event.type) {
+      case 'assistant':
+        if (event.streaming) return null;
+        return event.content.trim() ? bullet(sgr('37;1', '●'), prose(event.content)) + '\r\n' : '';
+      case 'tool': {
+        if (event.status === 'running') return null;
+        const label = toolLabel(event);
+        if (!label || event.result?.notExecuted) return '';
+        const failed = ['failed', 'interrupted', 'timeout'].includes(event.status) || event.result?.error;
+        if (event.status === 'failed' && GUARD.test(event.result?.error || '')) return '';   // refused before running; the next step shows
+        const head = sgr(failed ? '31' : '32', '●') + ' ' + sgr('1', label) + '\r\n';
+        return head + this.toolSummary(event, failed);
+      }
+      case 'approval-request': {
+        const r = event.request;
+        return sgr('33', '⚠  需要确认：' + r.reason) + '\r\n' + (r.command ? sgr('36', '  $ ' + r.command.replace(/\n/g, '\r\n    ')) : sgr('36', '  写入 ' + r.path)) + '\r\n';
+      }
+      case 'proposal': {
+        const p = event.proposal;
+        const lines = [sgr('1', '◆ 方案：' + p.title), dim('  ' + p.summary)];
+        p.steps.forEach((step, i) => lines.push(`  ${i + 1}. ${step}`));
+        if (p.checks?.length) lines.push(dim('  验收：' + p.checks.join('；')));
+        if (p.risks?.length) lines.push(sgr('33', '  风险：' + p.risks.join('；')));
+        return lines.join('\r\n') + '\r\n';
+      }
+      case 'result': {
+        const r = event.report || {};
+        const ok = r.outcome === 'completed';
+        return sgr(ok ? '32' : '33', (ok ? '✔ ' : '! ') + (r.headline || event.content)) + '\r\n\r\n';
+      }
+      case 'notice':
+        return sgr('33', '! ') + dim(event.content) + '\r\n';
+      default:
+        return '';   // user / answer / approval / question / recovery: shown by the prompts here
+    }
+  }
+
+  toolSummary(event, failed) {
+    const r = event.result || {};
+    const width = Math.max(20, this.term.cols);
+    const ran = (event.name === 'run' || event.name === 'wait') && !r.error && r.exitCode !== undefined;   // ran and exited non-zero: its output says why
+    if (failed && !ran) return row(width, ['2', '  ⎿ '], ['31', r.error || r.warning || { interrupted: '已中断，结果未知', timeout: '超时，结果未知' }[event.status] || '失败']) + '\r\n';
+    if (event.name === 'run' || event.name === 'wait') {
+      const lines = String(r.output || '').replace(/\r/g, '').split('\n').filter(l => l.trim());
+      const shown = lines.slice(0, 3).map((l, i) => row(width, ['2', (i ? '    ' : '  ⎿ ') + l]));
+      if (lines.length > 3) shown.push(row(width, ['2', `    … 另 ${lines.length - 3} 行`]));
+      if (!lines.length) shown.push(row(width, ['2', '  ⎿ ' + (r.exitCode ? `退出码 ${r.exitCode}` : '完成，无输出')]));
+      else if (r.exitCode) shown.push(row(width, ['33', `    退出码 ${r.exitCode}`]));
+      return shown.join('\r\n') + '\r\n';
+    }
+    if (event.name === 'write_file') return row(width, ['2', '  ⎿ 已写入，可在助手页撤销']) + '\r\n';
+    return '';
+  }
+
+  // ---- prompts ----
+  showMenu(key, options, { escLabel, onEsc } = {}) {
+    if (this.menu?.key === key && this.phase === 'menu') return;
+    if (this.done.has(key)) return;
+    this.stopSpin();
+    this.menu = { key, options, index: 0, escLabel, onEsc };
+    this.phase = 'menu';
+    this.redraw();
+  }
+
+  pick(option) {
+    const key = this.menu.key;
+    this.done.add(key);
+    this.clearLive();
+    this.write(dim('  → ' + option.label) + '\r\n\r\n');
+    this.menu = null;
+    this.phase = 'running';
+    this.since = Date.now();
+    this.spin('思考中');
+    const result = option.run();
+    if (result?.then) this.act(result);
+  }
+
+  // A user action (allow, answer, reply, pause): until it has reached the main process, a fetched
+  // task may still show the old prompt.
+  act(promise) {
+    this.busy = true;
+    Promise.resolve(promise).then(() => { this.busy = false; this.epoch++; this.refresh(); }, error => { this.busy = false; this.fail(error); });
+  }
+
+  fail(error) {
+    this.stopSpin();
+    this.clearLive();
+    this.write(sgr('31', '✕ ' + String(error?.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')) + '\r\n');
+    if (!this.taskId) return this.close();
+    this.phase = 'starting';
+    this.refresh();
+  }
+
+  approvalMenu(request) {
+    const answer = allow => () => api.agentApprove({ id: this.taskId, requestId: request.id, allow, credentials: this.credentials });
+    this.showMenu('approval:' + request.id, [
+      { label: '允许执行', hint: '只放行这一次', run: answer(true) },
+      { label: '不执行', hint: '助手会换别的办法或说明情况', run: answer(false) },
+    ], { escLabel: '不执行', onEsc: 1 });
+  }
+
+  planMenu(proposal) {
+    this.showMenu('plan:' + proposal.revision, [
+      { label: '执行方案', run: () => api.agentExecutePlan({ id: this.taskId, revision: proposal.revision, credentials: this.credentials }) },
+      { label: '修改方案…', hint: '说说要改哪里', run: () => this.askReply(this.task, '说说方案要改哪里，↵ 发送 · Esc 回到命令行') },
+      { label: '先不做', run: () => this.close() },
+    ], { escLabel: '先不做', onEsc: 2 });
+  }
+
+  // ask(): one question at a time; free-text questions use the reply prompt.
+  questionFlow(request) {
+    const key = 'question:' + request.id;
+    if (this.done.has(key) || (this.menu?.key?.startsWith(key) && this.phase !== 'running') || this.input?.key?.startsWith(key)) return;
+    const answers = [];
+    const next = () => {
+      const q = request.questions[answers.length];
+      if (!q) {
+        this.done.add(key);
+        this.phase = 'running'; this.since = Date.now(); this.spin('思考中');
+        return this.act(api.agentAnswer({ id: this.taskId, requestId: request.id, answers, credentials: this.credentials }));
+      }
+      this.commit(sgr('36', '? ') + sgr('1', q.question) + '\r\n');
+      const typed = () => this.reply(`${key}:${q.id}:text`, '输入回答，↵ 发送 · Esc 回到命令行', text => { answers.push({ questionId: q.id, text }); this.clearLive(); this.write(dim('  → ' + text) + '\r\n'); next(); });
+      if (!q.options.length) return typed();
+      const options = q.options.map((o, i) => ({ label: o.label + (i === q.recommendedOption ? '（推荐）' : ''), hint: o.description, run: () => { answers.push({ questionId: q.id, optionIndex: i }); next(); } }));
+      options.push({ label: '自己输入…', run: typed });
+      this.menu = null;
+      this.showMenu(`${key}:${q.id}`, options, { escLabel: '回到命令行' });
+      // pick() would start the spinner between questions; options here continue the flow instead
+      this.menu.flow = true;
+      if (q.recommendedOption !== undefined) { this.menu.index = q.recommendedOption; this.redraw(); }
+    };
+    next();
+  }
+
+  askReply(task, hint) {
+    const status = task?.status;
+    const ended = status === 'completed' || status === 'failed';
+    this.reply('reply:' + (task?.events.at(-1)?.id || ''), hint || (ended ? '↵ 接着问 · Esc 回到命令行' : '回复助手，↵ 发送 · Esc 回到命令行'), text => {
+      this.clearLive();
+      this.write(sgr('36;1', '› ') + text + '\r\n\r\n');
+      this.phase = 'running'; this.since = Date.now(); this.spin('思考中');
+      this.act(api.agentResume({ id: this.taskId, message: text, credentials: this.credentials }));
+    });
+  }
+
+  reply(key, hint, onSubmit) {
+    if (this.input?.key === key && this.phase === 'input') return;
+    this.stopSpin();
+    this.input = { key, text: '', hint: '  ' + hint, onSubmit };
+    this.menu = null;
+    this.phase = 'input';
+    this.redraw();
+  }
+
+  // ---- keys ----
+  key(data) {
+    if (this.phase === 'running' || this.phase === 'starting') {
+      if ((data === '\x1b' || data === '\x03') && this.taskId && this.phase === 'running') {
+        this.label = '正在中断';
+        this.redraw();
+        this.act(api.agentPause(this.taskId));
+      }
+      return;
+    }
+    if (this.phase === 'menu') {
+      const menu = this.menu, count = menu.options.length;
+      if (data === '\x1b[A' || data === '\x1bOA' || data === 'k') { menu.index = (menu.index + count - 1) % count; this.redraw(); }
+      else if (data === '\x1b[B' || data === '\x1bOB' || data === 'j') { menu.index = (menu.index + 1) % count; this.redraw(); }
+      else if (/^[1-9]$/.test(data) && Number(data) <= count) { menu.index = Number(data) - 1; this.choose(); }
+      else if (data === '\r') this.choose();
+      else if (data === '\x1b' || data === '\x03') {
+        if (menu.onEsc !== undefined) { menu.index = menu.onEsc; this.choose(); } else this.close();
+      }
+      return;
+    }
+    if (this.phase === 'input') {
+      const input = this.input;
+      if (data === '\r') {
+        const text = input.text.trim();
+        if (!text) { if (input.key.startsWith('reply:')) this.close(); return; }
+        this.input = null;
+        input.onSubmit(text);
+      } else if (data === '\x1b') this.close();
+      else if (data === '\x03') { if (input.text) { input.text = ''; this.redraw(); } else this.close(); }
+      else if (data === '\x7f' || data === '\b') { input.text = [...input.text].slice(0, -1).join(''); this.redraw(); }
+      else if (data === '\x15') { input.text = ''; this.redraw(); }
+      else if (!data.startsWith('\x1b')) {
+        const text = data.replace(/\r\n?|\n/g, ' ').replace(/[\x00-\x1f\x7f]/g, '');
+        if (text) { input.text = (input.text + text).slice(0, 4000); this.redraw(); }
+      }
+    }
+  }
+
+  choose() {
+    const option = this.menu.options[this.menu.index];
+    if (this.menu.flow) {
+      this.clearLive();
+      this.write(dim('  → ' + option.label.replace(/（推荐）$/, '')) + '\r\n');
+      this.menu = null;
+      option.run();
+      return;
+    }
+    this.pick(option);
+  }
+}
+
+// A light sweeping across the label: dim text, a bright band moving left to right.
+function shimmer(label, frame) {
+  const chars = [...label, '…'];
+  const span = chars.length + 6;
+  const center = (frame % span) - 3;
+  return chars.map((ch, i) => [Math.abs(i - center) <= 1 ? '1' : '2', ch]);
 }

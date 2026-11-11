@@ -564,6 +564,17 @@ test('risk gate: destructive commands and sensitive writes need approval; readin
   assert.equal(riskOf('write_file', { path: '/etc/nginx/nginx.conf' }), null);
 });
 
+test('risk gate: looking at the firewall is free, changing it is not', () => {
+  for (const command of ['ufw status verbose', 'sudo iptables -S INPUT', 'iptables -t nat -nvL --line-numbers', 'ip6tables -L',
+    'iptables-save', 'nft list ruleset', 'nft -a list table inet filter', 'firewall-cmd --state', 'firewall-cmd --zone=public --list-all',
+    "ufw status verbose 2>/dev/null; echo ---; iptables -S INPUT 2>/dev/null | head -20; nft list ruleset 2>/dev/null | head -30"])
+    assert.equal(riskOf('run', { command }), null, command);
+  for (const command of ['ufw allow 80', 'ufw disable', 'ufw', 'iptables -A INPUT -p tcp --dport 22 -j DROP', 'iptables -F', 'iptables -L; iptables -P INPUT DROP',
+    'iptables -S -D INPUT 1', 'iptables-restore < rules', 'nft flush ruleset', 'nft add rule inet filter input drop', 'firewall-cmd --add-port=80/tcp',
+    'firewall-cmd --reload', 'firewall-cmd --list-all && firewall-cmd --permanent --remove-service=ssh'])
+    assert.equal(riskOf('run', { command }), '改动防火墙', command);
+});
+
 test('auto mode: a risky command waits for the user, runs once when allowed, and asks again next time', async t => {
   const risky = { hostId: 'h1', command: 'systemctl restart nginx' };
   const { agent, remote } = setup(t, {
@@ -585,6 +596,30 @@ test('auto mode: a risky command waits for the user, runs once when allowed, and
   assert.deepEqual(remote.log.commands.map(c => c.command), [risky.command]);
   assert.equal(task.status, 'awaiting_approval');                     // the approval was used up
   assert.equal(task.approvals.length, 0);
+});
+
+test('auto mode: an allowed call is run by the kernel exactly as held, after looking at the host; a rewrite is gated again', async t => {
+  const risky = { hostId: 'h1', command: 'systemctl restart cron' };
+  const { agent, remote } = setup(t, {
+    script: round => [
+      reply([call('run', { hostId: 'h1', command: 'systemctl status cron' })]),   // an earlier command: the next run must look first
+      reply([call('run', risky)]),
+      reply([call('run', { hostId: 'h1', command: 'systemctl restart cron && sleep 1' })]),   // the model rewrites it anyway
+      reply([], '已重启。'),
+    ][round],
+  });
+  const task = agent.start({ prompt: '重启 cron', hostIds: ['h1'] });
+  await agent.active?.done;
+  assert.equal(task.status, 'awaiting_approval');
+  agent.approve({ id: task.id, requestId: task.interaction.id, allow: true });
+  await agent.active?.done;
+  const tools = task.events.filter(e => e.type === 'tool').map(e => e.name + ':' + (e.args.command || e.args.topic));
+  assert.deepEqual(tools.slice(2, 4), ['inspect:overview', 'run:systemctl restart cron']);   // looked, then exactly the allowed call
+  assert.deepEqual(remote.log.commands.map(c => c.command).filter(c => c.includes('restart')), ['systemctl restart cron']);
+  assert.match(task.messages.filter(m => m.role === 'user').at(-1).content, /已按用户允许执行这一步/);
+  assert.equal(task.status, 'awaiting_approval');                       // the rewritten command needs its own approval
+  assert.equal(agent.held.get(task.id).args.command, 'systemctl restart cron && sleep 1');
+  assert.ok(!JSON.stringify(agent.store.get(task.id)).includes('"held"'));
 });
 
 test('auto mode: a denied command never runs and the model is told not to work around it', async t => {
@@ -708,27 +743,16 @@ test('changes on one host are queued; the same conversation cannot be started tw
 
 // ---- 2.2: "# question" in the terminal ----------------------------------------
 
-test('terminal suggestions: screen is redacted, risky commands are marked, plain-text answers still work', async t => {
-  const { suggest } = require('../src/agent/suggest.cjs');
-  const seen = [];
-  const host = { id: 'h1', name: 'web', username: 'root', operatingSystem: { name: 'Ubuntu 22.04' } };
-  const complete = async options => {
-    seen.push(options);
-    return { message: { role: 'assistant', content: null, tool_calls: [call('suggest', {
-      commands: [{ command: 'ss -lntp | grep :80', explain: '看谁占用 80 端口' }, { command: 'systemctl restart nginx', explain: '重启 nginx' }],
-      note: '', handoff: false,
-    })] } };
-  };
-  const settings = { baseUrl: 'https://m/v1', model: 'm' };
-  const answer = await suggest({ complete, settings, apiKey: 'sk-test-key-0123456789abcdef', host, password: 'a-much-longer-secret-value',
-    question: '80 端口被谁占了', screen: 'login ok\nexport PASS=a-much-longer-secret-value\n' });
-  assert.equal(answer.commands[0].risk, null);
-  assert.ok(answer.commands[1].risk);
-  const sent = JSON.stringify(seen[0].messages);
-  assert.ok(!sent.includes('a-much-longer-secret-value'));
-  assert.match(sent, /Ubuntu 22\.04/);
 
-  const text = await suggest({ complete: async () => ({ message: { role: 'assistant', content: '用这个：\n```bash\ndf -h\n```' } }), settings, apiKey: 'k', host, question: '磁盘' });
-  assert.deepEqual(text.commands.map(c => c.command), ['df -h']);
-  await assert.rejects(suggest({ complete, settings, apiKey: 'k', host, question: '  ' }), /1–2000/);
+test('terminal questions: the screen goes to the model redacted, is not shown as the user message, and the tail says terminal', async t => {
+  const { agent, requests } = setup(t, { password: 'a-much-longer-secret-value', script: () => reply([], '端口 22 和 80 在监听。') });
+  const task = agent.start({ prompt: '哪些端口在监听', hostIds: ['h1'], origin: 'terminal', context: 'root@web:~# echo a-much-longer-secret-value\na-much-longer-secret-value' });
+  await agent.runs.get(task.id)?.done;
+  const sent = JSON.stringify(requests[0].messages);
+  assert.match(sent, /终端屏幕最近的内容/);
+  assert.doesNotMatch(sent, /a-much-longer-secret-value/);
+  assert.match(requests[0].messages.at(-1).content, /SSH 终端/);
+  assert.equal(task.events.find(e => e.type === 'user').content, '哪些端口在监听');
+  assert.equal(task.pendingContext, undefined);
+  assert.throws(() => agent.start({ prompt: 'x', hostIds: ['h1'], context: 'y'.repeat(9000) }), /过长/);
 });

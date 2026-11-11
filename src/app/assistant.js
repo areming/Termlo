@@ -321,7 +321,7 @@ export function createAssistantPage(element, app) {
       <li>
         <details class="console-row" data-state="${state}">
           <summary>
-            <span class="row-state">${state === 'running' ? html`<span class="spinner"></span>` : ico({ success: 'check', waiting: 'status-warning', skipped: 'stop' }[state] || 'close', 'sm')}</span>
+            <span class="row-state">${state === 'running' ? html`<span class="glyph-spinner" aria-hidden="true"></span>` : ico({ success: 'check', waiting: 'status-warning', skipped: 'stop' }[state] || 'close', 'sm')}</span>
             <span class="console-label">${toolLabel(event)}</span>
             <span class="console-meta">${state === 'running' ? '运行中' : state === 'waiting' ? '等你确认' : state === 'skipped' ? '未执行' : r.exitCode !== undefined && r.exitCode !== 0 ? `退出码 ${r.exitCode}` : elapsed}</span>
             ${ico('chevron-right', 'sm')}
@@ -650,7 +650,7 @@ export function createAssistantPage(element, app) {
     const since = Date.parse(task.events.at(-1)?.at || '') || Date.now();
     const preview = thinking?.taskId === task.id && thinking.events === task.events.length ? thinking.text : '';
     return html`<div class="msg-step thinking-step" data-thinking data-since="${since}">
-      <span class="spinner"></span><span>思考中…<span class="text-muted" data-elapsed>${elapsed(since)}</span></span>
+      <span class="glyph-spinner" aria-hidden="true"></span><span><span class="shimmer">思考中…</span><span class="text-muted" data-elapsed>${elapsed(since)}</span></span>
       <span class="thinking-preview text-muted truncate" data-thinking-preview>${preview}</span>
     </div>`;
   }

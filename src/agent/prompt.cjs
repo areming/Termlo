@@ -62,6 +62,9 @@ function tail({ task, hosts, roundsLeft, unverified, approvedPlan }) {
   if (unverified.length) {
     lines.push(`以下主机有结果未知的操作或刚恢复任务，变更前必须先用 inspect 或 read_file 核实：${unverified.join('、')}`);
   }
+  if (task.origin === 'terminal') {
+    lines.push('用户在 SSH 终端里用 "# 问题" 提问，你的文字直接显示在终端里：回答尽量短，纯文本，不用表格和标题；命令放在 ``` 代码块里。你通过自己的连接执行命令，当前目录与用户终端可能不同，需要时用绝对路径。');
+  }
   if (roundsLeft <= 3) lines.push('模型调用即将用完：尽快收尾并调用 finish。');
   return lines.join('\n');
 }

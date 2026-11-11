@@ -6,6 +6,27 @@ const { createHash } = require('node:crypto');
 // Cleaning up its own scratch files in /tmp is routine and needs no click.
 const TMP_CLEANUP = /^\s*rm\s+-[a-zA-Z]+(?:\s+\/tmp\/(?!\.\.)[^\s;&|*`$()<>]+)+\s*$/;
 
+// Firewall tools: looking (ufw status, iptables -S/-L, nft list, firewall-cmd --list-…) is free;
+// every other use of them, or a use we cannot classify, needs approval.
+const FIREWALL = /\b(ip6?tables(?:-save|-restore)?|nft|ufw|firewall-cmd)\b([^;&|\n]*)/g;
+function firewallReadOnly(tool, rest) {
+  const args = rest.replace(/\s*\d*>>?&?\s*\S+/g, '').trim();   // output redirections say nothing about the firewall
+  if (/^ip6?tables-save$/.test(tool)) return true;
+  if (/-restore$/.test(tool)) return false;
+  if (/^ip6?tables$/.test(tool)) {
+    return /(?:^|\s)(?:-[a-zA-Z]*[SL][a-zA-Z]*|--list(?:-rules)?)(?=\s|$)/.test(args)
+      && !/(?:^|\s)(?:-[a-zA-Z]*[AIDRFXPNZE]|--(?:append|insert|delete|replace|flush|delete-chain|policy|new-chain|zero|rename-chain))/.test(args);
+  }
+  if (tool === 'nft') return /^(?:-[a-zA-Z]+\s+|--[\w-]+\s+)*(?:list|describe)\b/.test(args);
+  if (tool === 'ufw') return /^(?:status(?:\s+(?:verbose|numbered))?|show\s+\w+|app\s+(?:list|info\b.*)|version)\s*$/.test(args);
+  if (tool === 'firewall-cmd') return /--(?:state|list|get|query|info)/.test(args) && !/--(?:add|remove|set|change|new|delete|reload|complete-reload|runtime-to-permanent|panic|lockdown|direct|reset)/.test(args);
+  return false;
+}
+function changesFirewall(command) {
+  for (const [, tool, rest] of command.matchAll(FIREWALL)) if (!firewallReadOnly(tool, rest)) return true;
+  return false;
+}
+
 const COMMAND_RULES = [
   [/\brm\s+(?:-[a-zA-Z]*[rRf]|--recursive|--force)/, '删除文件或目录'],
   [/\b(?:shred|wipefs|mkfs(?:\.\w+)?|fdisk|sfdisk|parted|lvremove|vgremove|pvremove)\b/, '改动磁盘或文件系统'],
@@ -19,7 +40,7 @@ const COMMAND_RULES = [
   [/\b(?:kubectl|helm)\s+(?:[\w-]+\s+)*(?:delete|uninstall|drain|scale)\b/, '删除或缩容集群资源'],
   [/\b(?:drop\s+(?:database|schema|table|user)|truncate\s+(?:table\s+)?\w|delete\s+from\s+\w)/i, '删除数据库数据'],
   [/\b(?:flushall|flushdb)\b/i, '清空缓存数据'],
-  [/\b(?:iptables|ip6tables|nft|ufw|firewall-cmd)\b/, '改动防火墙'],
+  [{ test: changesFirewall }, '改动防火墙'],
   [/(?:^|[;&|(]\s*|\bsudo\s+(?:-\S+\s+)*)(?:useradd|userdel|usermod|groupdel|passwd|chpasswd|visudo)\b/, '改动系统账户或权限'],
   // Writing (not reading) login, permission or mount configuration.
   [/(?:>>?|\btee\b|\bsed\s+(?:-\S+\s+)*-i|\b(?:cp|mv|rm|ln|install|truncate|chmod|chown)\b)[^;&|]*(?:sshd_config|authorized_keys|\/etc\/sudoers|\/etc\/shadow|\/etc\/passwd|\/etc\/fstab)/, '改动登录、权限或挂载配置'],

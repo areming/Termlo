@@ -71,7 +71,7 @@
 }
 .terminal-search .input-group { width: calc(var(--sp-8) * 8); }
 .terminal-panes { position: relative; flex: 1; min-height: 0; background: var(--terminal-bg); }
-.terminal-pane { position: absolute; inset: 0; overflow: hidden; padding: var(--sp-2) 0 var(--sp-2) var(--sp-3); }
+.terminal-pane { position: absolute; inset: 0; overflow: hidden; }
 .terminal-pane .xterm { height: 100%; }
 .terminal-empty { flex: 1; overflow: auto; padding: var(--sp-6); }
 
@@ -285,7 +285,10 @@
 /* ---- terminal ----------------------------------------------------------------------- */
 .terminal-tabs { background: var(--sidebar-bg); }
 .terminal-tab[aria-selected="true"] { background: var(--terminal-bg); box-shadow: inset 0 2px 0 var(--accent); }
-.terminal-pane { padding: var(--sp-3) 0 var(--sp-2) var(--sp-4); }
+/* content-box: FitAddon reads the pane's computed height, which must exclude this padding (with border-box it counted one row too many, hidden under the status bar). */
+.terminal-pane { padding: var(--sp-3) 0 var(--sp-2) var(--sp-4); box-sizing: content-box; }
+/* The space under the last row (less than one row) shows xterm's own layers: paint them like the terminal. */
+.terminal-pane .xterm-viewport, .terminal-pane .xterm-scrollable-element { background-color: var(--terminal-bg) !important; }
 .terminal-status {
   display: flex; align-items: center; gap: var(--sp-4); min-height: 30px; padding: 0 var(--sp-4);
   border-top: var(--border) solid var(--line); background: var(--sidebar-bg);
@@ -770,31 +773,25 @@ div.setting { cursor: default; }
 .plan-fold-body { display: grid; gap: var(--sp-3); padding: var(--sp-3); font-size: var(--fs-sm); }
 .assistant .msg-user { border: var(--border) solid var(--line); }
 
-/* ---- terminal: "# 问题" bar ------------------------------------------------------------ */
+/* ---- terminal: "问 AI" entry (the assistant itself draws inside the terminal) ---------- */
 .terminal-ask { margin-left: auto; color: var(--muted); }
 .terminal-ask .icon { color: var(--accent-text); }
-.ask-bar {
-  display: grid; gap: var(--sp-2); flex: none; max-height: 55%; overflow: auto; padding: var(--sp-2) var(--sp-4) var(--sp-3);
-  border-top: var(--border) solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  background: var(--surface-raised); box-shadow: 0 -8px 24px color-mix(in srgb, #000 22%, transparent);
+
+/* Working indicator (assistant page; the terminal draws the same in text): a cycling star and
+   a light sweeping across the label. */
+.glyph-spinner { display: inline-grid; place-items: center; width: var(--icon-md); color: var(--accent-text); font-size: 15px; line-height: 1; }
+.glyph-spinner::before { content: '✻'; animation: glyph 1.1s steps(1) infinite; }
+@keyframes glyph {
+  0% { content: '·'; } 10% { content: '✢'; } 20% { content: '✳'; } 30% { content: '✶'; } 40% { content: '✻'; }
+  50% { content: '✽'; } 60% { content: '✻'; } 70% { content: '✶'; } 80% { content: '✳'; } 90% { content: '✢'; }
 }
-.ask-bar { padding-inline: max(var(--sp-4), calc((100% - 980px) / 2)); }
-.ask-head { display: flex; align-items: center; gap: var(--sp-2); }
-.ask-mark { display: grid; place-items: center; color: var(--accent-text); }
-.ask-input { flex: 1; min-width: 0; height: var(--control-md); border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--fs-md); }
-.ask-input:focus-visible { outline: none; }
-.ask-head .spinner { width: 14px; height: 14px; }
-.ask-note { display: flex; gap: var(--sp-2); align-items: baseline; margin: 0; color: var(--text-secondary, var(--muted)); font-size: var(--fs-sm); line-height: var(--lh-body); user-select: text; }
-.ask-note[data-tone="danger"] { color: var(--danger); }
-.ask-commands { display: grid; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; outline: none; }
-.ask-command {
-  display: grid; gap: 2px; padding: var(--sp-2) var(--sp-3); border: var(--border) solid var(--line); border-radius: var(--r-md);
-  background: var(--terminal-bg); cursor: pointer; transition: border-color var(--dur-fast) var(--ease-out);
+.shimmer {
+  background: linear-gradient(90deg, var(--muted) 0 38%, var(--text) 50%, var(--muted) 62% 100%) 100% 0 / 260% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: shimmer 2s linear infinite;
 }
-.ask-command code { background: none; color: var(--text); font-family: var(--font-mono); font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
-.ask-command[aria-selected="true"] { border-color: var(--accent); }
-.ask-commands:focus-visible .ask-command[aria-selected="true"] { box-shadow: 0 0 0 3px var(--accent-soft); }
-.ask-explain { color: var(--muted); font-size: var(--fs-xs); }
-.ask-risk { display: flex; align-items: center; gap: var(--sp-1); color: var(--warning); font-size: var(--fs-xs); }
-.ask-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-.ask-foot kbd { margin-left: var(--sp-1); padding: 0 4px; border-radius: 3px; background: color-mix(in srgb, currentColor 14%, transparent); font-family: inherit; font-size: 11px; }
+@keyframes shimmer { to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .glyph-spinner::before { animation: none; }
+  .shimmer { animation: none; background: none; color: var(--muted); }
+}

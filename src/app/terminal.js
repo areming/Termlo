@@ -5,7 +5,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { api, html, ico, render, $, $$, on, toast, fail, menu, contextMenu, message, uid } from './ui.js';
 import { SemanticHighlights } from './terminal-highlights.js';
 import { view } from './telemetry.js';
-import { createAsk, trackLine, questionOf } from './terminal-ask.js';
+import { createTerminalAI, trackLine, questionOf } from './terminal-ask.js';
 
 // Terminal fonts offered in settings. JetBrains Mono ships with the app.
 export const TERMINAL_FONTS = {
@@ -59,7 +59,7 @@ export function createTerminalPage(element, app) {
   const searchBar = $('#term-search', element);
   const searchInput = $('#term-search-input', element);
   const statusBar = $('#term-status', element);
-  const asker = createAsk({ host: element.querySelector('.terminal-page'), before: statusBar, app, onResize: () => fitTab(active) });
+  const ai = createTerminalAI({ app });
 
   // Live state of the active tab's host under the terminal.
   function drawStatus() {
@@ -89,7 +89,7 @@ export function createTerminalPage(element, app) {
           <button class="tab-close" type="button" data-close="${t.id}" aria-label="关闭 ${app.hostLabel(t.hostId)}" title="关闭">${ico('close', 'sm')}</button>
         </div>`)}
       <button class="btn btn-icon btn-sm btn-ghost terminal-new" type="button" data-new aria-label="新建终端" title="新建终端">${ico('plus', 'sm')}</button>
-      ${tabs.length ? html`<button class="btn btn-sm btn-ghost terminal-ask" type="button" data-ask-open title="也可以直接在命令行输入 # 加问题，回车">${ico('assistant', 'sm')}问 AI</button>` : ''}`);
+      ${tabs.length ? html`<button class="btn btn-sm btn-ghost terminal-ask" type="button" data-ask-open title="在命令行输入 # 加一句话，回车">${ico('assistant', 'sm')}问 AI</button>` : ''}`);
     empty.hidden = tabs.length > 0;
     panes.hidden = tabs.length === 0;
     drawStatus();
@@ -111,7 +111,6 @@ export function createTerminalPage(element, app) {
   }
 
   function select(tab) {
-    if (asker.openFor && asker.openFor !== tab) asker.close();
     active = tab;
     for (const t of tabs) t.pane.hidden = t !== tab;
     drawTabs();
@@ -179,11 +178,12 @@ export function createTerminalPage(element, app) {
     tabs.push(tab);
 
     term.onData(data => {
+      if (tab.ai) { ai.key(tab, data); return; }   // the assistant has this terminal until it hands it back
       if (tab.status === 'ready') {
         // "# 问题" + Enter: the shell gets it as a comment (does nothing, and the question stays
-        // in the scrollback); the question goes to the model.
+        // in the scrollback); the assistant takes over this terminal.
         const question = data === '\r' ? questionOf(tab) : null;
-        if (question) { api.write(tab.id, '\r'); tab.line = ''; asker.ask(tab, question); return; }
+        if (question) { tab.line = ''; ai.begin(tab, question); return; }
         trackLine(tab, data);
         api.write(tab.id, data);
       }
@@ -202,10 +202,9 @@ export function createTerminalPage(element, app) {
       contextMenu(event, [
         { label: '复制', icon: 'copy', hint: 'Ctrl Shift C', run: () => copySelection(tab) },
         { label: '粘贴', icon: 'clipboard', hint: 'Ctrl Shift V', run: () => paste(tab) },
-        ...(selection.trim() ? [
-          { label: '问 AI', icon: 'assistant', run: () => asker.ask(tab, '解释这段输出；有问题的话给出处理命令', selection.trim().slice(-4000)) },
-          { label: '交给助手处理', icon: 'play', run: () => askAssistant(tab, selection) },
-        ] : [{ label: '问 AI', icon: 'assistant', hint: '# 问题 ↵', run: () => asker.open(tab) }]),
+        ...(tab.ai || tab.status !== 'ready' ? [] : [selection.trim()
+          ? { label: '问 AI', icon: 'assistant', run: () => ai.prompt(tab, { question: '看看选中的这段输出是什么情况，有问题就处理', context: selection.trim().slice(-6000) }) }
+          : { label: '问 AI', icon: 'assistant', hint: '# 问题 ↵', run: () => ai.prompt(tab) }]),
         'separator',
         { label: '查找', icon: 'search', hint: 'Ctrl F', run: openSearch },
         { label: '清屏', icon: 'refresh', run: () => term.clear() },
@@ -223,7 +222,7 @@ export function createTerminalPage(element, app) {
       if (localStorage.getItem('termlo.askHint')) return;
       localStorage.setItem('termlo.askHint', '1');
     } catch { return; }
-    toast('小技巧：命令行里输入 # 加一句话回车，AI 会给出命令', { timeout: 9000 });
+    toast('小技巧：命令行里输入 # 加一句话回车，助手会在这里查看、动手并回答', { timeout: 9000 });
   }
 
   async function copySelection(tab) {
@@ -237,16 +236,8 @@ export function createTerminalPage(element, app) {
     try { const text = await api.readClipboard(); if (text) tab.term.paste(text); } catch (error) { fail(error); }
   }
 
-  function askAssistant(tab, selection) {
-    const excerpt = selection.trim().slice(-4000);
-    app.navigate('assistant', {
-      hostIds: [tab.hostId],
-      prompt: `这是 ${app.hostLabel(tab.hostId)} 终端里的输出，帮我看看是什么问题，需要的话处理一下：\n\n${excerpt}`,
-    });
-  }
-
   function close(tab) {
-    if (asker.openFor === tab) asker.close();
+    ai.detach(tab);
     api.disconnect(tab.id).catch(() => {});
     tab.highlights.dispose();
     tab.term.dispose();
@@ -289,7 +280,7 @@ export function createTerminalPage(element, app) {
 
   // ---- events --------------------------------------------------------------------------
   on(tabStrip, 'click', '[data-close]', (event, button) => { event.stopPropagation(); const tab = tabs.find(t => t.id === button.dataset.close); if (tab) close(tab); });
-  on(tabStrip, 'click', '[data-ask-open]', () => { if (active) asker.open(active); });
+  on(tabStrip, 'click', '[data-ask-open]', () => { if (active) ai.prompt(active); });
   on(tabStrip, 'click', '[data-tab]', (_e, element) => select(tabs.find(t => t.id === element.dataset.tab)));
   on(tabStrip, 'click', '[data-new]', async (_e, button) => {
     const hosts = store.get().hosts.slice().sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
@@ -306,12 +297,16 @@ export function createTerminalPage(element, app) {
 
   const byId = id => tabs.find(t => t.id === id);
   const decode = data => Uint8Array.from(atob(data), c => c.charCodeAt(0));
-  app.on('data', event => byId(event.id)?.term.write(decode(event.data)));
+  app.on('data', event => {
+    const tab = byId(event.id);
+    if (tab && !ai.hold(tab, decode(event.data))) tab.term.write(decode(event.data));
+  });
   app.on('stage', event => byId(event.id)?.term.writeln(`\x1b[2m${event.message}\x1b[0m`));
-  app.on('fault', event => byId(event.id)?.term.writeln(`\r\n\x1b[31m${event.message}\x1b[0m`));
+  app.on('fault', event => { const tab = byId(event.id); if (tab) ai.detach(tab); tab?.term.writeln(`\r\n\x1b[31m${event.message}\x1b[0m`); });
   app.on('status', event => {
     const tab = byId(event.id);
     if (!tab || event.status !== 'closed' || tab.status !== 'ready') return;
+    ai.detach(tab);
     tab.status = 'closed';
     tab.term.writeln('\r\n\x1b[2m连接已断开。按 Enter 重新连接。\x1b[0m');
     drawTabs(); publish();
