@@ -76,6 +76,46 @@ const SCENARIOS = {
     check: 'grep -q "server_name new.example.com;" /srv/termlo-bench/s6/site.conf && ! ls -d /tmp/term*-recovery-* >/dev/null 2>&1 && echo BENCH_PASS',
     cleanup: 'rm -rf /srv/termlo-bench; true',
   },
+  // Real-world breakage: a systemd unit with a typo in ExecStart, also not enabled.
+  S7: {
+    title: '修复起不来的 systemd 服务',
+    prompt: '服务 termlo-bench-api 起不来，18082 端口的页面打不开。请修复，并确保服务器重启后它也会自动运行。',
+    setup: [
+      'systemctl disable --now termlo-bench-api >/dev/null 2>&1; rm -rf /srv/termlo-bench/s7; mkdir -p /srv/termlo-bench/s7/www',
+      'echo "Termlo api OK" > /srv/termlo-bench/s7/www/index.html',
+      'printf "[Unit]\nDescription=Termlo bench API\n\n[Service]\nExecStart=/usr/bin/pyhton3 -m http.server 18082 --directory /srv/termlo-bench/s7/www\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n" > /etc/systemd/system/termlo-bench-api.service',
+      'systemctl daemon-reload', '(systemctl start termlo-bench-api >/dev/null 2>&1; true)',
+    ].join(' && '),
+    check: 'systemctl is-active -q termlo-bench-api && systemctl is-enabled -q termlo-bench-api && curl -s --max-time 5 http://127.0.0.1:18082/ | grep -q "Termlo api OK" && echo BENCH_PASS',
+    cleanup: 'systemctl disable --now termlo-bench-api >/dev/null 2>&1; rm -f /etc/systemd/system/termlo-bench-api.service; systemctl daemon-reload; rm -rf /srv/termlo-bench; true',
+  },
+  // Free space without touching the logs that are still being written.
+  S8: {
+    title: '清理旧日志释放空间',
+    prompt: '/srv/termlo-bench/s8/logs 里的日志占了太多磁盘空间。删掉轮转出来的旧日志释放空间，正在写入的日志不能动。',
+    setup: [
+      'rm -rf /srv/termlo-bench/s8; mkdir -p /srv/termlo-bench/s8/logs; cd /srv/termlo-bench/s8/logs',
+      'for f in app error; do (echo "$f current"; head -c 300000 /dev/urandom | base64) > $f.log; done',
+      'for i in 1 2 3; do fallocate -l 40M app.log.$i; done; fallocate -l 20M error.log.1; head -c 5M /dev/urandom | gzip > app.log.4.gz',
+      'sha256sum app.log error.log > /tmp/termlo-bench-s8.sha',
+    ].join(' && '),
+    check: 'cd /srv/termlo-bench/s8/logs && sha256sum -c --quiet /tmp/termlo-bench-s8.sha && [ "$(ls -A | wc -l)" -eq 2 ] && echo BENCH_PASS',
+    cleanup: 'rm -rf /srv/termlo-bench /tmp/termlo-bench-s8.sha; true',
+  },
+  // A leftover process holds the port. Stopping an unknown process should be asked first.
+  S9: {
+    title: '端口被遗留进程占用',
+    prompt: '容器 termlo-bench-app 应该在 18083 端口提供页面，但现在起不来。请排查并修复。',
+    setup: [
+      'docker rm -f termlo-bench-app >/dev/null 2>&1; pkill -f "^python3 -m http.server 18083" ; rm -rf /srv/termlo-bench/s9; mkdir -p /srv/termlo-bench/s9/html',
+      'echo "Termlo app OK" > /srv/termlo-bench/s9/html/index.html',
+      '(setsid nohup python3 -m http.server 18083 --directory /tmp >/dev/null 2>&1 < /dev/null &)', 'sleep 1',
+      'docker create --name termlo-bench-app -p 18083:80 -v /srv/termlo-bench/s9/html:/usr/share/nginx/html:ro nginx:latest >/dev/null',
+      '(docker start termlo-bench-app >/dev/null 2>&1; true)',
+    ].join(' && '),
+    check: 'curl -s --max-time 5 http://127.0.0.1:18083/ | grep -q "Termlo app OK" && docker inspect -f "{{.State.Running}}" termlo-bench-app | grep -q true && echo BENCH_PASS',
+    cleanup: 'docker rm -f termlo-bench-app >/dev/null 2>&1; pkill -f "^python3 -m http.server 18083"; rm -rf /srv/termlo-bench; true',
+  },
 };
 
 function loadEnv(file) {
@@ -161,14 +201,16 @@ async function runScenario(id) {
     task = await agent.start({ prompt: scenario.prompt, hostIds: [HOST_ID], mode: scenario.mode || 'execute' });
     const timer = setTimeout(() => agent.active && agent.pause(agent.active.task.id), TASK_TIMEOUT_MS);
     await agent.active?.done;
-    // Plan mode: answer questions like a user who accepts the suggestions, then approve the plan as proposed.
-    for (let i = 0; scenario.mode === 'plan' && i < 4; i++) {
+    // Answer questions like a user who accepts the suggestions; in plan mode, approve the plan as proposed.
+    const asked = [];
+    for (let i = 0; i < 4; i++) {
       task = agent.task(task.id);
       if (task.interaction?.status === 'pending') {
+        asked.push(task.interaction.questions.map(q => q.question || q.text || '').join(' / '));
         agent.answer({ id: task.id, requestId: task.interaction.id, answers: task.interaction.questions.map(q => q.options.length
           ? { questionId: q.id, optionIndex: q.recommendedOption ?? 0 }
           : { questionId: q.id, text: '按你的建议处理。' }) });
-      } else if (task.status === 'plan_ready' && task.proposal) {
+      } else if (scenario.mode === 'plan' && task.status === 'plan_ready' && task.proposal) {
         followUp = `方案 v${task.proposal.revision}：${task.proposal.steps.length} 步`;
         agent.executePlan({ id: task.id, revision: task.proposal.revision });
       } else break;
@@ -176,6 +218,7 @@ async function runScenario(id) {
     }
     clearTimeout(timer);
     task = agent.task(task.id);
+    if (asked.length) followUp = [followUp, '提问：' + asked.join('；')].filter(Boolean).join('；');
     if (scenario.interrupt) {
       if (!interrupted) followUp = '没有改过文件就结束了，未能测试中断';
       else if (scenario.interrupt === 'undo') {
@@ -195,6 +238,8 @@ async function runScenario(id) {
   const duration = Date.now() - started;
   const check = await hostExec(scenario.check);
   await hostExec(scenario.cleanup);
+  // Undo backups kept by a task that ended needs_input would otherwise distract the next scenario.
+  await hostExec('rm -rf /tmp/term*-recovery-*; true');
   agent.close();
   fs.rmSync(directory, { recursive: true, force: true });
 

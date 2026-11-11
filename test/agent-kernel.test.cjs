@@ -278,6 +278,17 @@ test('a check reported as failed turns completed into needs_input', async t => {
   assert.match(task.report.headline, /有验收项未通过/);
 });
 
+test('an unverified check also turns completed into needs_input, labelled as unverified', async t => {
+  const { agent } = setup(t, {
+    script: round => round === 0
+      ? reply([call('run', { hostId: 'h1', command: 'systemctl is-enabled api' })])
+      : reply([call('finish', { outcome: 'completed', headline: '已修复', summary: '…', checks: [{ label: '服务运行', status: 'passed' }, { label: '重启后自启', status: 'unknown' }] })]),
+  });
+  const task = await runTask(agent, { prompt: 'x' });
+  assert.equal(task.status, 'needs_input');
+  assert.equal(task.report.headline, '有验收项未验证：已修复');
+});
+
 // ---- ergonomics --------------------------------------------------------------
 
 test('long commands return a short id and wait collects the result', async t => {

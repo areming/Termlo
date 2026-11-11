@@ -718,7 +718,8 @@ class AgentService {
     const artifacts = (args.artifacts || []).filter(a => !a.hostId || task.hostIds.includes(a.hostId));
     task.report = {
       outcome,
-      headline: outcome !== args.outcome ? `有验收项未通过：${args.headline}`.slice(0, 160) : args.headline,
+      headline: outcome === args.outcome ? args.headline
+        : `${checks.some(c => c.status === 'failed') ? '有验收项未通过' : '有验收项未验证'}：${args.headline}`.slice(0, 160),
       summary: args.summary, checks, artifacts, at: now(),
     };
     task.status = outcome;
