@@ -331,6 +331,7 @@ function installHandlers() {
   handle('agentAnswer', input => ({ id: agent.answer(input).id }));
   handle('agentExecutePlan', input => ({ id: agent.executePlan(input).id }));
   handle('agentApprove', input => ({ id: agent.approve(input).id }));
+  handle('agentSuggest', input => agent.suggest(input || {}));
   handle('agentPause', async id => { await agent.pause(id); return agent.state(); });
   handle('agentRemove', async input => {
     const { id, clean = false, credentials = {} } = typeof input === 'string' ? { id: input } : input || {};

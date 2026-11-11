@@ -654,3 +654,81 @@ test('auto mode: an executed plan stays in the conversation and its checks are e
   assert.equal(task.status, 'completed');
   assert.equal(task.approvedPlan, null);
 });
+
+// ---- 2.2: conversations run in parallel ---------------------------------------
+
+// Per-conversation scripts: the conversation is recognised by its first message.
+function byTask(scripts) {
+  const rounds = {};
+  return async (_round, options) => {
+    const name = Object.keys(scripts).find(key => JSON.stringify(options.messages).includes(key));
+    rounds[name] = (rounds[name] || 0) + 1;
+    return scripts[name](rounds[name] - 1);
+  };
+}
+const done = (label = '完成') => reply([call('finish', { outcome: 'completed', headline: label, summary: label, checks: [{ label, status: 'passed' }] })]);
+
+test('two conversations run at once; a change by one makes the other look again before its own change', async t => {
+  let aChanged;
+  const changed = new Promise(resolve => { aChanged = resolve; });
+  const { agent, remote } = setup(t, {
+    script: byTask({
+      任务A: round => [reply([call('run', { hostId: 'h1', command: 'touch /srv/a' })]), (aChanged(), done('A'))][round],
+      任务B: async round => {
+        if (round === 0) { await changed; return reply([call('run', { hostId: 'h1', command: 'touch /srv/b' })]); }
+        if (round === 1) return reply([call('inspect', { hostId: 'h1', topic: 'overview' })]);
+        if (round === 2) return reply([call('run', { hostId: 'h1', command: 'touch /srv/b' })]);
+        return done('B');
+      },
+    }),
+  });
+  const b = agent.start({ prompt: '任务B', hostIds: ['h1'] });
+  const a = agent.start({ prompt: '任务A', hostIds: ['h1'] });
+  assert.deepEqual(new Set(agent.state().runningIds), new Set([a.id, b.id]));
+  await Promise.all([...agent.runs.values()].map(run => run.done));
+  assert.equal(a.status, 'completed');
+  assert.equal(b.status, 'completed');
+  assert.match(toolResults(b)[0].error, /其他对话刚改动过/);
+  assert.equal(remote.log.commands.filter(c => c.command === 'touch /srv/b').length, 1);   // only after looking again
+});
+
+test('changes on one host are queued; the same conversation cannot be started twice; at most four run', async t => {
+  const { agent } = setup(t, { script: () => new Promise(() => {}) });
+  const order = [];
+  const slow = label => agent.withHostLock('h1', async () => { order.push(label + '+'); await new Promise(r => setTimeout(r, 20)); order.push(label + '-'); });
+  await Promise.all([slow('a'), slow('b'), agent.withHostLock('h2', async () => order.push('other'))]);
+  assert.deepEqual(order.filter(x => x !== 'other'), ['a+', 'a-', 'b+', 'b-']);
+  assert.ok(order.indexOf('other') < order.indexOf('a-'));                                 // another host is not blocked
+
+  const tasks = [1, 2, 3, 4].map(i => agent.start({ prompt: '任务' + i, hostIds: ['h1'] }));
+  assert.throws(() => agent.start({ prompt: '任务5', hostIds: ['h1'] }), /最多 4 个/);
+  assert.throws(() => agent.resume({ id: tasks[0].id, message: '再来' }), /还在执行/);
+  await assert.rejects(agent.recover({ id: tasks[0].id, action: 'undo' }), /还在执行|正在这台主机/);
+});
+
+// ---- 2.2: "# question" in the terminal ----------------------------------------
+
+test('terminal suggestions: screen is redacted, risky commands are marked, plain-text answers still work', async t => {
+  const { suggest } = require('../src/agent/suggest.cjs');
+  const seen = [];
+  const host = { id: 'h1', name: 'web', username: 'root', operatingSystem: { name: 'Ubuntu 22.04' } };
+  const complete = async options => {
+    seen.push(options);
+    return { message: { role: 'assistant', content: null, tool_calls: [call('suggest', {
+      commands: [{ command: 'ss -lntp | grep :80', explain: '看谁占用 80 端口' }, { command: 'systemctl restart nginx', explain: '重启 nginx' }],
+      note: '', handoff: false,
+    })] } };
+  };
+  const settings = { baseUrl: 'https://m/v1', model: 'm' };
+  const answer = await suggest({ complete, settings, apiKey: 'sk-test-key-0123456789abcdef', host, password: 'a-much-longer-secret-value',
+    question: '80 端口被谁占了', screen: 'login ok\nexport PASS=a-much-longer-secret-value\n' });
+  assert.equal(answer.commands[0].risk, null);
+  assert.ok(answer.commands[1].risk);
+  const sent = JSON.stringify(seen[0].messages);
+  assert.ok(!sent.includes('a-much-longer-secret-value'));
+  assert.match(sent, /Ubuntu 22\.04/);
+
+  const text = await suggest({ complete: async () => ({ message: { role: 'assistant', content: '用这个：\n```bash\ndf -h\n```' } }), settings, apiKey: 'k', host, question: '磁盘' });
+  assert.deepEqual(text.commands.map(c => c.command), ['df -h']);
+  await assert.rejects(suggest({ complete, settings, apiKey: 'k', host, question: '  ' }), /1–2000/);
+});

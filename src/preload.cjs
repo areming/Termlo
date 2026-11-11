@@ -9,7 +9,7 @@ const methods = [
   'knownHosts', 'forgetHostKey',
   'readClipboard', 'writeClipboard', 'editMenu',
   'agentState', 'agentTask', 'agentConfigure', 'agentTest', 'agentStart', 'agentFollowup',
-  'agentResume', 'agentAnswer', 'agentExecutePlan', 'agentApprove', 'agentPause', 'agentRemove', 'agentRecover',
+  'agentResume', 'agentAnswer', 'agentExecutePlan', 'agentApprove', 'agentSuggest', 'agentPause', 'agentRemove', 'agentRecover',
   'agentPickAttachments', 'agentAddAttachments', 'agentDropAttachment',
 ];
 

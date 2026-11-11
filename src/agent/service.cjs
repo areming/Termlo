@@ -17,6 +17,7 @@ const prompt = require('./prompt.cjs');
 const model = require('./model.cjs');
 const { createRedactor } = require('./redact.cjs');
 const { riskOf, approvalKey } = require('./risk.cjs');
+const suggestion = require('./suggest.cjs');
 const { AgentRemote, quote } = require('../agent-remote.cjs');
 const { AgentConsole } = require('../agent-console.cjs');
 const { AgentAttachments } = require('../agent-attachments.cjs');
@@ -29,6 +30,7 @@ const OUTPUT_LIMIT = 8000;
 const CONTEXT_HIGH = 140000;   // characters of history before trimming
 const CONTEXT_LOW = 70000;     // characters kept after trimming
 const MAX_EVENTS = 3000;
+const MAX_RUNS = 4;          // conversations executing at the same time
 const RUNNING_STATES = new Set(['running']);
 
 const INSPECT = {
@@ -55,7 +57,8 @@ class AgentService {
     this.complete = complete;
     this.remoteFactory = remoteFactory;
     this.web = web;
-    this.active = null;
+    this.runs = new Map();    // task id -> run: several conversations can run at once
+    this.locks = new Map();   // host id -> tail of the queue of changes on that host
     this.busy = false;
     this.sequence = 0;   // monotonic ordering for observations vs. changes (timestamps can tie)
     // A task that was running when the app stopped has operations of unknown outcome.
@@ -68,11 +71,15 @@ class AgentService {
     }
   }
 
+  // The most recently started run (tests and single-run callers).
+  get active() { return [...this.runs.values()].at(-1) || null; }
+
   // ---- public API -------------------------------------------------------------
   state() {
     return {
       settings: this.store.publicSettings(),
       activeId: this.active?.task.id || null,
+      runningIds: [...this.runs.keys()],
       tasks: this.store.tasks.map(({ messages, events, terminals, operations, fileChanges, stagingChanges, ...summary }) => ({
         ...summary,
         recoverable: this.recoverable(summary.id).length,
@@ -86,7 +93,7 @@ class AgentService {
   }
 
   configure(input) {
-    if (this.active) throw new Error('请先暂停当前任务再更改模型');
+    if (this.runs.size) throw new Error('还有对话在执行，等它们完成或先暂停再更改模型');
     return this.store.configure(input);
   }
 
@@ -102,11 +109,22 @@ class AgentService {
     return { ok: true, toolCalling: !!result.message.tool_calls?.some(call => call.function.name === 'connection_check') };
   }
 
+  // Terminal "# question": a one-off command suggestion, independent of conversations.
+  suggest({ hostId, question, screen = '' }) {
+    const settings = this.store.settings;
+    if (!settings.baseUrl || !settings.model) throw new Error('先在设置里配置模型');
+    const host = this.hosts.get(hostId);
+    return suggestion.suggest({
+      complete: this.complete, settings, apiKey: this.store.key(), host, password: this.hosts.password(hostId),
+      question, screen, signal: AbortSignal.timeout(90000),
+    });
+  }
+
   start({ prompt: goal, hostIds = [], mode = 'auto', credentials = {}, attachmentIds = [] }) {
     if (typeof goal !== 'string' || !goal.trim() || goal.length > 12000) throw new Error('请填写任务目标（最多 12000 字）');
     if (!['auto', 'execute', 'plan'].includes(mode)) throw new Error('任务模式无效');
     if (!Array.isArray(hostIds) || hostIds.length > 20 || hostIds.some(id => typeof id !== 'string')) throw new Error('最多选择 20 台主机');
-    this.ensureIdle();
+    this.ensureIdle(null);
     for (const id of hostIds) this.hosts.get(id);
     this.attachments.validate(attachmentIds);
     const task = this.store.create({ prompt: goal.trim(), hostIds: [...new Set(hostIds)], mode });
@@ -117,7 +135,7 @@ class AgentService {
   }
 
   followup({ id, message }) {
-    const run = this.active;
+    const run = this.runs.get(id);
     if (run?.task.id !== id || run.task.status !== 'running') throw new Error('任务没有在运行，请用"继续"发送');
     if (typeof message !== 'string' || !message.trim() || message.length > 12000) throw new Error('补充内容应为 1–12000 字');
     const task = run.task;
@@ -130,7 +148,7 @@ class AgentService {
   }
 
   resume({ id, message = '', credentials = {}, attachmentIds = [], hostIds, answer }) {
-    this.ensureIdle();
+    this.ensureIdle(id);
     const task = this.store.get(id);
     if (typeof message !== 'string' || message.length > 12000) throw new Error('补充内容过长');
     const pending = task.interaction?.status === 'pending' ? task.interaction : null;
@@ -170,7 +188,7 @@ class AgentService {
   }
 
   executePlan({ id, revision, credentials = {} }) {
-    this.ensureIdle();
+    this.ensureIdle(id);
     const task = this.store.get(id);
     const proposal = task.proposal;
     if (task.mode === 'execute' || task.status !== 'plan_ready' || !proposal || proposal.revision !== revision) throw new Error('方案已变化，请查看最新方案');
@@ -187,7 +205,7 @@ class AgentService {
   // The user's answer to a risk gate. Allowing records exactly that call (tool, host, command or
   // path + content); the model repeats it and it runs once. Denying tells the model not to retry.
   approve({ id, requestId, allow, credentials = {} }) {
-    this.ensureIdle();
+    this.ensureIdle(id);
     const task = this.store.get(id);
     const pending = task.interaction;
     if (pending?.kind !== 'approval' || pending.status !== 'pending' || pending.id !== requestId) throw new Error('这一步已经变化，请查看最新状态');
@@ -225,8 +243,8 @@ class AgentService {
   }
 
   async pause(id) {
-    const run = this.active;
-    if (run?.task.id !== id) return this.store.get(id);
+    const run = this.runs.get(id);
+    if (!run) return this.store.get(id);
     run.controller.abort();
     await run.done;
     return run.task;
@@ -236,7 +254,8 @@ class AgentService {
   // files it changed (the changes themselves stay) and attachment staging folders.
   // Nothing is deleted locally if cleaning fails, so the undo records are not lost.
   async remove(id, { clean = false, credentials = {} } = {}) {
-    if (this.active?.task.id === id) throw new Error('请先暂停任务');
+    if (this.runs.has(id)) throw new Error('请先暂停这个对话');
+    if (clean) this.ensureHostsQuiet(this.store.get(id));
     if (this.busy) throw new Error('正在处理服务器上的改动，请稍候');
     const task = this.store.get(id);
     const records = this.recoverable(id);
@@ -278,15 +297,15 @@ class AgentService {
   }
 
   close() {
-    this.active?.controller.abort();
-    this.active?.remote.close();
+    for (const run of this.runs.values()) { run.controller.abort(); run.remote.close(); }
     this.store.flush();
   }
 
   // Undo file writes and clean attachment staging of a stopped task.
   async recover({ id, action, credentials = {} }) {
-    this.ensureIdle();
+    this.ensureIdle(id);
     const task = this.store.get(id);
+    if (action === 'undo') this.ensureHostsQuiet(task);
     const records = this.recoverable(id);
     if (action === 'keep') {
       task.recovery = null;
@@ -331,10 +350,31 @@ class AgentService {
   }
 
   // ---- run lifecycle ----------------------------------------------------------
-  ensureIdle() {
-    if (this.active) throw new Error(`「${this.active.task.title}」还在执行，等它完成或先暂停`);   // one conversation runs at a time
+  // id: the conversation about to run (null for a new one). Different conversations run in
+  // parallel, also on the same host; changes on one host are queued (withHostLock).
+  ensureIdle(id) {
+    if (id && this.runs.has(id)) throw new Error('这个对话还在执行，可以直接补充要求，或先暂停');
+    if (this.runs.size >= MAX_RUNS) throw new Error(`同时最多 ${MAX_RUNS} 个对话在执行，等其中一个完成或先暂停`);
     if (this.busy) throw new Error('正在撤销改动，请稍候');
     if (!this.store.settings.baseUrl || !this.store.settings.model) throw new Error('请先配置模型');
+  }
+
+  // Undoing or cleaning a task's files must not race a conversation working on those hosts.
+  ensureHostsQuiet(task) {
+    const busy = [...this.runs.values()].find(run => run.task.hostIds.some(h => task.hostIds.includes(h)));
+    if (busy) throw new Error(`「${busy.task.title}」正在这台主机上执行，等它结束再操作`);
+  }
+
+  // Changes on one host run one at a time, in order; reads are never queued.
+  async withHostLock(hostId, fn) {
+    const previous = this.locks.get(hostId) || Promise.resolve();
+    let release;
+    const mine = new Promise(resolve => { release = resolve; });
+    const tail = previous.then(() => mine);
+    this.locks.set(hostId, tail);
+    await previous;
+    try { return await fn(); }
+    finally { release(); if (this.locks.get(hostId) === tail) this.locks.delete(hostId); }
   }
 
   addRoute(hostId, routes, auth, credentials) {
@@ -395,7 +435,7 @@ class AgentService {
       this.event(task, 'notice', '有主机密码少于 8 个字符，服务器输出中出现的该密码无法可靠隐藏。建议改用更长的密码或密钥登录。');
     }
 
-    this.active = run;
+    this.runs.set(task.id, run);
     task.status = 'running';
     task.notice = '';
     task.model = settings.model;
@@ -423,7 +463,7 @@ class AgentService {
           task.recovery = { count: this.recoverable(task.id).length, at: now() };
           this.event(task, 'recovery', '可以撤销本任务的文件改动', { count: task.recovery.count });
         }
-        if (this.active === run) this.active = null;
+        if (this.runs.get(task.id) === run) this.runs.delete(task.id);
         this.store.save(task, true);
         this.notify({ type: 'agent', taskId: task.id });
       });
@@ -599,9 +639,11 @@ class AgentService {
       validate(TOOLS[name].function.parameters, args);
       event.args = redact.deep(args);   // for display; the raw args are what runs (invariant 7)
       if ('hostId' in args && !task.hostIds.includes(args.hostId)) throw new Error('主机不在本任务范围内');   // invariant 1
-      this.guard(run, name, args);
-      const held = this.holdForApproval(run, name, args, event);
-      result = held || await this.dispatch(run, name, args);
+      const execute = async () => {
+        this.guard(run, name, args);   // after waiting in the host queue: another conversation may have changed the host
+        return this.holdForApproval(run, name, args, event) || await this.dispatch(run, name, args);
+      };
+      result = MUTATING.has(name) ? await this.withHostLock(args.hostId, execute) : await execute();
       event.status = result.status === 'running' ? 'running'
         : result.status && result.status !== 'completed' ? result.status
         : result.error ? 'failed' : 'completed';
@@ -621,7 +663,7 @@ class AgentService {
   guard(run, name, args) {
     const { task } = run;
     if (MUTATING.has(name) && this.unverified(run).includes(args.hostId)) {
-      throw new Error('这台主机有结果未知的操作（或任务刚恢复），先用 inspect 或 read_file 核实现场，再做变更');   // invariant 4
+      throw new Error('这台主机有结果未知的操作（或任务刚恢复、或其他对话刚改动过它），先用 inspect 或 read_file 核实现场，再做变更');   // invariant 4
     }
     if (name === 'write_file' && args.sha256 !== 'missing' && run.reads.get(args.hostId + '\0' + args.path) !== args.sha256) {
       throw new Error('写入前先用 read_file 读取这个文件，并传入它返回的 sha256');   // invariant 3
@@ -821,6 +863,9 @@ class AgentService {
     const op = { id: randomUUID(), tool, hostId, state: 'dispatched', at: now() };
     run.task.operations.push(op);
     run.lastMutationAt = this.tick();
+    // Other conversations on this host now hold a stale picture: they must look again before
+    // their next change (invariant 4, across conversations).
+    for (const other of this.runs.values()) if (other !== run && other.task.hostIds.includes(hostId)) other.mustObserve.add(hostId);
     this.store.save(run.task, true);   // must be on disk before the command leaves
     return op;
   }

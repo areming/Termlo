@@ -769,3 +769,32 @@ div.setting { cursor: default; }
 .plan-fold > summary > .icon:last-child { margin-left: 0; }
 .plan-fold-body { display: grid; gap: var(--sp-3); padding: var(--sp-3); font-size: var(--fs-sm); }
 .assistant .msg-user { border: var(--border) solid var(--line); }
+
+/* ---- terminal: "# 问题" bar ------------------------------------------------------------ */
+.terminal-ask { margin-left: auto; color: var(--muted); }
+.terminal-ask .icon { color: var(--accent-text); }
+.ask-bar {
+  display: grid; gap: var(--sp-2); flex: none; max-height: 55%; overflow: auto; padding: var(--sp-2) var(--sp-4) var(--sp-3);
+  border-top: var(--border) solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: var(--surface-raised); box-shadow: 0 -8px 24px color-mix(in srgb, #000 22%, transparent);
+}
+.ask-bar { padding-inline: max(var(--sp-4), calc((100% - 980px) / 2)); }
+.ask-head { display: flex; align-items: center; gap: var(--sp-2); }
+.ask-mark { display: grid; place-items: center; color: var(--accent-text); }
+.ask-input { flex: 1; min-width: 0; height: var(--control-md); border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--fs-md); }
+.ask-input:focus-visible { outline: none; }
+.ask-head .spinner { width: 14px; height: 14px; }
+.ask-note { display: flex; gap: var(--sp-2); align-items: baseline; margin: 0; color: var(--text-secondary, var(--muted)); font-size: var(--fs-sm); line-height: var(--lh-body); user-select: text; }
+.ask-note[data-tone="danger"] { color: var(--danger); }
+.ask-commands { display: grid; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; outline: none; }
+.ask-command {
+  display: grid; gap: 2px; padding: var(--sp-2) var(--sp-3); border: var(--border) solid var(--line); border-radius: var(--r-md);
+  background: var(--terminal-bg); cursor: pointer; transition: border-color var(--dur-fast) var(--ease-out);
+}
+.ask-command code { background: none; color: var(--text); font-family: var(--font-mono); font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.ask-command[aria-selected="true"] { border-color: var(--accent); }
+.ask-commands:focus-visible .ask-command[aria-selected="true"] { box-shadow: 0 0 0 3px var(--accent-soft); }
+.ask-explain { color: var(--muted); font-size: var(--fs-xs); }
+.ask-risk { display: flex; align-items: center; gap: var(--sp-1); color: var(--warning); font-size: var(--fs-xs); }
+.ask-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.ask-foot kbd { margin-left: var(--sp-1); padding: 0 4px; border-radius: 3px; background: color-mix(in srgb, currentColor 14%, transparent); font-family: inherit; font-size: 11px; }

@@ -540,7 +540,8 @@ export function createAssistantPage(element, app) {
   // ---- events ------------------------------------------------------------------------------
   root.addEventListener('input', event => { if (event.target.id === 'assistant-input') draft = event.target.value; });
   root.addEventListener('keydown', event => {
-    if (event.target.id === 'assistant-input' && event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    // Enter sends, Shift+Enter starts a new line; never while an input method is composing.
+    if (event.target.id === 'assistant-input' && event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       event.target.form.requestSubmit();
     }
@@ -683,6 +684,7 @@ export function createAssistantPage(element, app) {
     async show(params) {
       // Settings (the model) and the conversation list may have changed while away.
       try { state = await api.agentState(); } catch (error) { fail(error); }
+      if (params?.taskId) { openTask(params.taskId); return; }
       // From a host: continue that host's latest conversation (a new one if it has none).
       if (params?.hostIds?.length && !params.prompt && !params.compose) {
         const ids = params.hostIds;

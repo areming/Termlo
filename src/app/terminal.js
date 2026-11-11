@@ -5,6 +5,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { api, html, ico, render, $, $$, on, toast, fail, menu, contextMenu, message, uid } from './ui.js';
 import { SemanticHighlights } from './terminal-highlights.js';
 import { view } from './telemetry.js';
+import { createAsk, trackLine, questionOf } from './terminal-ask.js';
 
 // Terminal fonts offered in settings. JetBrains Mono ships with the app.
 export const TERMINAL_FONTS = {
@@ -58,6 +59,7 @@ export function createTerminalPage(element, app) {
   const searchBar = $('#term-search', element);
   const searchInput = $('#term-search-input', element);
   const statusBar = $('#term-status', element);
+  const asker = createAsk({ host: element.querySelector('.terminal-page'), before: statusBar, app, onResize: () => fitTab(active) });
 
   // Live state of the active tab's host under the terminal.
   function drawStatus() {
@@ -86,7 +88,8 @@ export function createTerminalPage(element, app) {
           <span class="truncate">${app.hostLabel(t.hostId)}</span>
           <button class="tab-close" type="button" data-close="${t.id}" aria-label="关闭 ${app.hostLabel(t.hostId)}" title="关闭">${ico('close', 'sm')}</button>
         </div>`)}
-      <button class="btn btn-icon btn-sm btn-ghost terminal-new" type="button" data-new aria-label="新建终端" title="新建终端">${ico('plus', 'sm')}</button>`);
+      <button class="btn btn-icon btn-sm btn-ghost terminal-new" type="button" data-new aria-label="新建终端" title="新建终端">${ico('plus', 'sm')}</button>
+      ${tabs.length ? html`<button class="btn btn-sm btn-ghost terminal-ask" type="button" data-ask-open title="也可以直接在命令行输入 # 加问题，回车">${ico('assistant', 'sm')}问 AI</button>` : ''}`);
     empty.hidden = tabs.length > 0;
     panes.hidden = tabs.length === 0;
     drawStatus();
@@ -108,6 +111,7 @@ export function createTerminalPage(element, app) {
   }
 
   function select(tab) {
+    if (asker.openFor && asker.openFor !== tab) asker.close();
     active = tab;
     for (const t of tabs) t.pane.hidden = t !== tab;
     drawTabs();
@@ -132,8 +136,10 @@ export function createTerminalPage(element, app) {
     try {
       await api.connect(tab.id, tab.hostId, credentials, { cols: tab.term.cols, rows: tab.term.rows });
       tab.status = 'ready';
+      tab.line = '';
       drawTabs(); publish();
       fitTab(tab);
+      hintOnce(tab);
     } catch (error) {
       const text = message(error);
       tab.status = 'failed';
@@ -167,13 +173,20 @@ export function createTerminalPage(element, app) {
     term.loadAddon(search);
     term.open(pane);
     const highlights = new SemanticHighlights(term, preferences.terminalHighlights !== false);
-    const tab = { id: uid('t'), hostId, term, fit, search, pane, highlights, status: 'connecting' };
+    const tab = { id: uid('t'), hostId, term, fit, search, pane, highlights, status: 'connecting', line: '' };
     // The bundled font may still be loading: re-measure once it is ready.
     fontsReady.then(() => { term.options.fontFamily = fontFamily(store.get().preferences.terminalFont); fitTab(tab); });
     tabs.push(tab);
 
     term.onData(data => {
-      if (tab.status === 'ready') api.write(tab.id, data);
+      if (tab.status === 'ready') {
+        // "# 问题" + Enter: the shell gets it as a comment (does nothing, and the question stays
+        // in the scrollback); the question goes to the model.
+        const question = data === '\r' ? questionOf(tab) : null;
+        if (question) { api.write(tab.id, '\r'); tab.line = ''; asker.ask(tab, question); return; }
+        trackLine(tab, data);
+        api.write(tab.id, data);
+      }
       else if ((tab.status === 'closed' || tab.status === 'failed') && data === '\r') connect(tab);
     });
     term.attachCustomKeyEventHandler(event => {
@@ -189,7 +202,10 @@ export function createTerminalPage(element, app) {
       contextMenu(event, [
         { label: '复制', icon: 'copy', hint: 'Ctrl Shift C', run: () => copySelection(tab) },
         { label: '粘贴', icon: 'clipboard', hint: 'Ctrl Shift V', run: () => paste(tab) },
-        ...(selection.trim() ? [{ label: '问助手', icon: 'assistant', run: () => askAssistant(tab, selection) }] : []),
+        ...(selection.trim() ? [
+          { label: '问 AI', icon: 'assistant', run: () => asker.ask(tab, '解释这段输出；有问题的话给出处理命令', selection.trim().slice(-4000)) },
+          { label: '交给助手处理', icon: 'play', run: () => askAssistant(tab, selection) },
+        ] : [{ label: '问 AI', icon: 'assistant', hint: '# 问题 ↵', run: () => asker.open(tab) }]),
         'separator',
         { label: '查找', icon: 'search', hint: 'Ctrl F', run: openSearch },
         { label: '清屏', icon: 'refresh', run: () => term.clear() },
@@ -199,6 +215,15 @@ export function createTerminalPage(element, app) {
     select(tab);
     connect(tab);
     return tab;
+  }
+
+  // First terminal ever: one tip about "# 问题".
+  function hintOnce(tab) {
+    try {
+      if (localStorage.getItem('termlo.askHint')) return;
+      localStorage.setItem('termlo.askHint', '1');
+    } catch { return; }
+    toast('小技巧：命令行里输入 # 加一句话回车，AI 会给出命令', { timeout: 9000 });
   }
 
   async function copySelection(tab) {
@@ -221,6 +246,7 @@ export function createTerminalPage(element, app) {
   }
 
   function close(tab) {
+    if (asker.openFor === tab) asker.close();
     api.disconnect(tab.id).catch(() => {});
     tab.highlights.dispose();
     tab.term.dispose();
@@ -263,6 +289,7 @@ export function createTerminalPage(element, app) {
 
   // ---- events --------------------------------------------------------------------------
   on(tabStrip, 'click', '[data-close]', (event, button) => { event.stopPropagation(); const tab = tabs.find(t => t.id === button.dataset.close); if (tab) close(tab); });
+  on(tabStrip, 'click', '[data-ask-open]', () => { if (active) asker.open(active); });
   on(tabStrip, 'click', '[data-tab]', (_e, element) => select(tabs.find(t => t.id === element.dataset.tab)));
   on(tabStrip, 'click', '[data-new]', async (_e, button) => {
     const hosts = store.get().hosts.slice().sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
