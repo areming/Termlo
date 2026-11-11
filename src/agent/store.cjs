@@ -45,11 +45,16 @@ class TaskStore {
   // ---- settings -------------------------------------------------------------
   publicSettings() {
     const { encryptedKey, ...settings } = this.settings;
-    return { ...settings, hasKey: !!encryptedKey };
+    let keyBroken = false;
+    if (encryptedKey) try { this.key(); } catch { keyBroken = true; }
+    return { ...settings, hasKey: !!encryptedKey && !keyBroken, keyBroken };
   }
 
+  // A key saved under another data directory or Windows user cannot be decrypted here.
   key() {
-    return this.settings.encryptedKey ? this.vault.decryptString(Buffer.from(this.settings.encryptedKey, 'base64')) : '';
+    if (!this.settings.encryptedKey) return '';
+    try { return this.vault.decryptString(Buffer.from(this.settings.encryptedKey, 'base64')); }
+    catch { throw new Error('已保存的 API 密钥无法在这台电脑上解密，请在设置里重新填写'); }
   }
 
   configure(input) {

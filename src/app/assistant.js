@@ -120,7 +120,7 @@ export function createAssistantPage(element, app) {
     if (element.hidden && root.childElementCount) return;
     const keepFocus = document.activeElement?.id === 'assistant-input';
     const caret = keepFocus ? document.activeElement.selectionStart : null;
-    if (!state.settings.baseUrl || !state.settings.model) render(root, setupView());
+    if (!state.settings.baseUrl || !state.settings.model || state.settings.keyBroken) render(root, setupView());
     else if (composing || !task) render(root, composeView());
     else render(root, taskView());
     const stream = $('.stream', root);
@@ -154,7 +154,7 @@ export function createAssistantPage(element, app) {
         <div class="card empty empty-page">
           <span class="empty-icon">${ico('assistant', 'lg')}</span>
           <h2 class="empty-title">先连接一个模型</h2>
-          <p class="empty-text">助手需要一个支持工具调用的模型（OpenAI 兼容接口）。密钥用系统加密保存在本机。</p>
+          <p class="empty-text">${state.settings.keyBroken ? '已保存的 API 密钥无法在这台电脑上解密，需要重新填写。' : '助手需要一个支持工具调用的模型（OpenAI 兼容接口）。密钥用系统加密保存在本机。'}</p>
           <button class="btn btn-primary" type="button" data-action="settings">${ico('settings')}设置模型</button>
         </div>
       </div>`;

@@ -44,9 +44,9 @@ export function createSettingsPage(element, app) {
               </div>
             </div>
             <div class="field">
-              <label class="field-label" for="m-key">API 密钥<span class="optional">${settings.hasKey ? '已保存，留空则不变' : '本机接口可以不填'}</span></label>
+              <label class="field-label" for="m-key">API 密钥<span class="optional">${settings.keyBroken ? '' : settings.hasKey ? '已保存，留空则不变' : '本机接口可以不填'}</span></label>
               <input class="input mono" id="m-key" name="apiKey" type="password" placeholder="${settings.hasKey ? '••••••••' : 'sk-…'}" autocomplete="off">
-              <p class="field-help">用系统加密保存在本机。更换接口地址后需要重新填写。</p>
+              ${settings.keyBroken ? html`<p class="field-error">${ico('status-warning', 'sm')}已保存的密钥无法在这台电脑上解密，请重新填写。</p>` : html`<p class="field-help">用系统加密保存在本机。更换接口地址后需要重新填写。</p>`}
             </div>
             <div class="btn-group settings-actions">
               <button class="btn" type="button" data-action="test" ${testing || !settings.model ? raw('disabled') : ''} ${testing ? raw('aria-busy="true"') : ''}>${testing ? '测试中…' : '测试连接'}</button>

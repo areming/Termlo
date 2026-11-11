@@ -367,3 +367,16 @@ test('streamed tool call fragments are assembled and text deltas reported', () =
   assert.equal(result.tokens, 42);
   assert.equal(result.usage.cached, 30);
 });
+
+test('a saved API key that cannot be decrypted is reported, not presented as saved', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'termlo-key-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(directory, 'agent'));
+  fs.writeFileSync(path.join(directory, 'agent', 'settings.json'), JSON.stringify({ baseUrl: 'https://m.example/v1', model: 'm', maxRounds: 60, encryptedKey: 'djEwAAAA' }));
+  const broken = { isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s), decryptString: () => { throw new Error('bad'); } };
+  const { TaskStore } = require('../src/agent/store.cjs');
+  const store = new TaskStore(directory, broken);
+  assert.equal(store.publicSettings().hasKey, false);
+  assert.equal(store.publicSettings().keyBroken, true);
+  assert.throws(() => store.key(), /重新填写/);
+});
